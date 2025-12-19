@@ -5,6 +5,7 @@ import streamlit as st
 import pandas as pd
 from fpdf import FPDF
 import plotly.graph_objects as go
+import db
 
 # -----------------------
 # Helper functions
@@ -322,6 +323,7 @@ class InvestmentPDF(FPDF):
         super().__init__()
         self.set_auto_page_break(auto=True, margin=15)
         self.truck_name = truck_name
+        self.report_currency = "Bs"
     
     def add_header(self):
         """Add report header - call manually after add_page"""
@@ -423,16 +425,212 @@ class InvestmentPDF(FPDF):
             self.set_x(15)
             self.cell(0, 6, f"{bullet}  {item}", 0, 1, 'L')
 
+    def add_paragraph(self, text, font_size=9, color=(80, 80, 80), left_margin=15, line_height=5):
+        self.set_font('Helvetica', '', font_size)
+        self.set_text_color(*color)
+        self.set_x(left_margin)
+        self.multi_cell(0, line_height, text)
+
+    def add_note_box(self, title, body, fill_color=(245, 248, 255), border_color=(30, 136, 229)):
+        start_x = 12
+        start_y = self.get_y()
+        box_w = 186
+        # Title
+        self.set_xy(start_x, start_y + 2)
+        self.set_font('Helvetica', 'B', 9)
+        self.set_text_color(border_color[0], border_color[1], border_color[2])
+        self.cell(0, 5, title, 0, 1, 'L')
+        # Body
+        self.set_x(start_x)
+        self.set_font('Helvetica', '', 8)
+        self.set_text_color(60, 60, 60)
+        before_y = self.get_y()
+        self.multi_cell(box_w - 4, 4, body)
+        after_y = self.get_y()
+        box_h = (after_y - start_y) + 4
+        # Background + border (draw last so height is known)
+        self.set_draw_color(border_color[0], border_color[1], border_color[2])
+        self.set_fill_color(fill_color[0], fill_color[1], fill_color[2])
+        self.rect(start_x, start_y, box_w, box_h, 'DF')
+        # Repaint text on top (FPDF draws rect over content)
+        self.set_xy(start_x, start_y + 2)
+        self.set_font('Helvetica', 'B', 9)
+        self.set_text_color(border_color[0], border_color[1], border_color[2])
+        self.cell(0, 5, title, 0, 1, 'L')
+        self.set_x(start_x)
+        self.set_font('Helvetica', '', 8)
+        self.set_text_color(60, 60, 60)
+        self.multi_cell(box_w - 4, 4, body)
+        self.ln(3)
+
 
 def generate_pdf_report(results, analysis, inputs, sensitivity_data=None):
     """Generate a PDF report of the investment analysis."""
     pdf = InvestmentPDF(inputs.get('truck_name', 'Truck'))
     pdf.add_page()
     pdf.add_header()
+
+    # Executive summary
+    scenario_label = str(inputs.get("analysis_context", "Escenario actual"))
+    monthly_payment = float(results.get("monthly_payment", 0.0) or 0.0)
+    profit_before_debt = float(results.get("profit_before_debt", 0.0) or 0.0)
+    profit_after_debt = float(results.get("profit_after_debt", 0.0) or 0.0)
+    monthly_revenue = float(results.get("monthly_revenue", 0.0) or 0.0)
+    operating_costs = float(results.get("operating_costs", 0.0) or 0.0)
+    total_taxes = float(results.get("total_taxes", 0.0) or 0.0)
+    net_margin_pct = (profit_after_debt / monthly_revenue * 100.0) if monthly_revenue > 0 else 0.0
+    dscr = (profit_before_debt / monthly_payment) if monthly_payment > 0 else None
+
+    breakeven_trips = None
+    best_trips = None
+    best_profit = None
+    if sensitivity_data:
+        for row in sensitivity_data:
+            if row.get("Utilidad Neta (Bs)", -1) >= 0:
+                breakeven_trips = row.get("Viajes/Mes")
+                break
+        for row in sensitivity_data:
+            p = row.get("Utilidad Neta (Bs)")
+            if p is None:
+                continue
+            if best_profit is None or p > best_profit:
+                best_profit = p
+                best_trips = row.get("Viajes/Mes")
+
+    pdf.section_title('Resumen ejecutivo')
+    pdf.add_metric('Escenario evaluado', scenario_label)
+    pdf.add_metric('Score de viabilidad', f"{analysis.get('overall_score', 0):.0f}/100")
+    pdf.add_metric('Recomendación', analysis.get('recommendation', '').replace('✅', '').replace('👍', '').replace('⚠️', '').replace('❌', '').strip())
+    pdf.ln(2)
+
+    headers = ['Indicador', 'Valor']
+    kpi_rows = [
+        ['Ingresos mensuales', f"{monthly_revenue:,.0f} Bs"],
+        ['Costos operativos', f"{operating_costs:,.0f} Bs"],
+        ['Impuestos (IVA + IT)', f"{total_taxes:,.0f} Bs"],
+        ['Cuota del crédito', f"{monthly_payment:,.0f} Bs"],
+        ['Utilidad neta (después de deuda)', f"{profit_after_debt:,.0f} Bs"],
+        ['Margen neto', f"{net_margin_pct:.1f}%"],
+        ['Utilidad anual estimada', f"{profit_after_debt * 12:,.0f} Bs"],
+    ]
+    if dscr is not None:
+        kpi_rows.append(['Cobertura de deuda (DSCR)', f"{dscr:.2f}x"])
+    if breakeven_trips is not None:
+        kpi_rows.append(['Punto de equilibrio (viajes/mes)', str(breakeven_trips)])
+    if best_trips is not None and best_profit is not None:
+        kpi_rows.append(['Mejor escenario (en rango)', f"{best_trips} viajes -> {best_profit:,.0f} Bs/mes"])
+
+    pdf.add_table(headers, kpi_rows, [80, 110])
+    pdf.ln(3)
+    pdf.add_note_box(
+        "Cómo interpretar",
+        "La utilidad neta se calcula con ingresos menos costos operativos, impuestos (IVA e IT) y la cuota del crédito. "
+        "El punto de equilibrio usa el análisis de sensibilidad (si está disponible) y representa el mínimo de viajes/mes para no tener pérdidas."
+    )
+
+    # Better client impact (comparison vs current scenario)
+    if inputs.get("better_client_enabled") and inputs.get("better_client_results"):
+        bc = inputs["better_client_results"]
+        base_results = inputs.get("baseline_results") or results
+
+        # Build a full "better client" results dict from baseline + overrides
+        better_full = dict(base_results)
+        better_full.update(
+            {
+                "monthly_revenue": float(bc.get("monthly_revenue", better_full.get("monthly_revenue", 0.0)) or 0.0),
+                "operating_costs": float(bc.get("operating_costs", better_full.get("operating_costs", 0.0)) or 0.0),
+                "iva_tax": float(bc.get("iva_tax", better_full.get("iva_tax", 0.0)) or 0.0),
+                "it_tax": float(bc.get("it_tax", better_full.get("it_tax", 0.0)) or 0.0),
+                "total_taxes": float(bc.get("total_taxes", better_full.get("total_taxes", 0.0)) or 0.0),
+                "profit_before_debt": float(bc.get("profit_before_debt", better_full.get("profit_before_debt", 0.0)) or 0.0),
+                "profit_after_debt": float(bc.get("profit_after_debt", better_full.get("profit_after_debt", 0.0)) or 0.0),
+                "payback_years": bc.get("payback_years", better_full.get("payback_years")),
+            }
+        )
+        better_full["total_costs"] = float(better_full.get("operating_costs", 0.0) or 0.0) + float(
+            better_full.get("total_taxes", 0.0) or 0.0
+        )
+
+        # Compute deltas
+        base_rev = float(base_results.get("monthly_revenue", 0.0) or 0.0)
+        base_taxes = float(base_results.get("total_taxes", 0.0) or 0.0)
+        base_profit = float(base_results.get("profit_after_debt", 0.0) or 0.0)
+        base_payback = base_results.get("payback_years")
+
+        better_rev = float(better_full.get("monthly_revenue", 0.0) or 0.0)
+        better_taxes = float(better_full.get("total_taxes", 0.0) or 0.0)
+        better_profit = float(better_full.get("profit_after_debt", 0.0) or 0.0)
+        better_payback = better_full.get("payback_years")
+
+        delta_rev = better_rev - base_rev
+        delta_taxes = better_taxes - base_taxes
+        delta_profit = better_profit - base_profit
+
+        # Rate + trip explanation
+        base_rate = float(inputs.get("base_price_per_m3", inputs.get("price_per_m3", 0.0)) or 0.0)
+        better_rate = float(inputs.get("better_rate", 0.0) or 0.0)
+        better_trips = float(inputs.get("better_rate_trips", bc.get("trips_better_rate", 0.0)) or 0.0)
+        m3_trip = float(inputs.get("m3_per_trip", 0.0) or 0.0)
+        delta_gross_per_trip = m3_trip * (better_rate - base_rate)
+        delta_net_per_trip = (delta_profit / better_trips) if better_trips > 0 else 0.0
+        rate_pct = ((better_rate - base_rate) / base_rate * 100.0) if base_rate > 0 else 0.0
+
+        # Scores for comparison
+        financed_amount = float(inputs.get("financed_amount", 0.0) or 0.0)
+        years = float(inputs.get("years", 0.0) or 0.0)
+        investment_total = float(base_results.get("investment_total", 0.0) or 0.0)
+        base_analysis = analyze_investment(base_results, financed_amount, years, investment_total)
+        better_analysis = analyze_investment(better_full, financed_amount, years, investment_total)
+        delta_score = float(better_analysis.get("overall_score", 0.0) or 0.0) - float(base_analysis.get("overall_score", 0.0) or 0.0)
+
+        pdf.section_title('Impacto del mejor cliente')
+        pdf.add_paragraph(
+            f"Este escenario reasigna {better_trips:.0f} viajes/mes a una tarifa de {better_rate:,.0f} Bs/m³ "
+            f"(vs {base_rate:,.0f} Bs/m³, {rate_pct:.0f}% más), manteniendo constante el total de viajes. "
+            "Como el número total de viajes no cambia, los costos por viaje (diesel/peajes) se mantienen; lo que cambia son los ingresos y, por consecuencia, los impuestos y la utilidad.",
+            font_size=9,
+        )
+        if better_trips > 0 and (better_rate - base_rate) != 0:
+            pdf.add_note_box(
+                "Efecto por viaje reasignado",
+                f"Incremento bruto estimado: {delta_gross_per_trip:,.0f} Bs por viaje (antes de impuestos). "
+                f"Incremento neto observado (después de impuestos y deuda): {delta_net_per_trip:,.0f} Bs por viaje.",
+                fill_color=(240, 255, 245),
+                border_color=(40, 167, 69),
+            )
+
+        headers = ['Métrica', 'Escenario actual', 'Mejor cliente', 'Cambio']
+        rows = [
+            ['Ingresos mensuales', f"{base_rev:,.0f} Bs", f"{better_rev:,.0f} Bs", f"{delta_rev:,.0f} Bs"],
+            ['Impuestos (IVA+IT)', f"{base_taxes:,.0f} Bs", f"{better_taxes:,.0f} Bs", f"{delta_taxes:,.0f} Bs"],
+            ['Utilidad neta (después de deuda)', f"{base_profit:,.0f} Bs", f"{better_profit:,.0f} Bs", f"{delta_profit:,.0f} Bs"],
+            ['Utilidad anual estimada', f"{base_profit * 12:,.0f} Bs", f"{better_profit * 12:,.0f} Bs", f"{delta_profit * 12:,.0f} Bs"],
+            ['Score', f"{base_analysis.get('overall_score', 0):.0f}", f"{better_analysis.get('overall_score', 0):.0f}", f"{delta_score:+.0f}"],
+        ]
+        if base_payback and better_payback:
+            rows.append(['Payback', f"{float(base_payback):.1f} años", f"{float(better_payback):.1f} años", f"{(float(better_payback) - float(base_payback)):+.1f} años"])
+
+        pdf.add_table(headers, rows, [60, 45, 45, 40])
+        pdf.ln(2)
+        pdf.add_paragraph(
+            "Nota: este comparativo usa el mismo crédito fiscal (si aplica) y el mismo plan de financiamiento. "
+            "Si cambian el mix de viajes, condiciones de cobro o costos por ruta, los resultados pueden variar.",
+            font_size=8,
+            color=(110, 110, 110),
+        )
     
     # Investment Summary Section
     pdf.section_title('Resumen de la inversión')
+    truck_price = inputs.get("truck_price")
+    trailer_price = inputs.get("trailer_price")
+    if truck_price is not None or trailer_price is not None:
+        if truck_price is not None:
+            pdf.add_metric('Precio camión', f"{float(truck_price):,.0f} Bs")
+        if trailer_price is not None:
+            pdf.add_metric('Precio tolva / acople', f"{float(trailer_price):,.0f} Bs")
     pdf.add_metric('Inversión total (camión + acople)', f"{results['investment_total']:,.0f} Bs")
+    if inputs.get("capital") is not None:
+        pdf.add_metric('Capital disponible', f"{float(inputs['capital']):,.0f} Bs")
     pdf.add_metric('Capital propio invertido', f"{results['equity_used']:,.0f} Bs")
     pdf.add_metric('Reserva de caja', f"{results['reserve']:,.0f} Bs")
     pdf.add_metric('Aporte total (capital + crédito)', f"{results['total_funded']:,.0f} Bs")
@@ -451,14 +649,19 @@ def generate_pdf_report(results, analysis, inputs, sensitivity_data=None):
     pdf.add_metric('Tasa de interés anual', f"{inputs['annual_rate']*100:.1f}%")
     pdf.add_metric('Plazo', f"{inputs['years']} años")
     pdf.add_metric('Cuota mensual', f"{results['monthly_payment']:,.0f} Bs")
+    if monthly_payment > 0:
+        deuda_anual = monthly_payment * 12
+        pdf.add_metric('Servicio de deuda anual', f"{deuda_anual:,.0f} Bs")
     pdf.ln(5)
     
     # Monthly Cash Flow Section
     pdf.section_title('Flujo de caja mensual')
     pdf.add_metric('Ingresos mensuales', f"{results['monthly_revenue']:,.0f} Bs")
     pdf.add_metric('Costos operativos', f"{results['operating_costs']:,.0f} Bs")
-    pdf.add_metric('IVA (13%)', f"{results['iva_tax']:,.0f} Bs")
-    pdf.add_metric('IT (3%)', f"{results['it_tax']:,.0f} Bs")
+    iva_label = f"IVA ({inputs.get('iva_rate', 0.0) * 100:.1f}%)"
+    it_label = f"IT ({inputs.get('it_rate', 0.0) * 100:.1f}%)"
+    pdf.add_metric(iva_label, f"{results['iva_tax']:,.0f} Bs")
+    pdf.add_metric(it_label, f"{results['it_tax']:,.0f} Bs")
     pdf.add_metric('Total impuestos', f"{results['total_taxes']:,.0f} Bs")
     pdf.add_metric('Utilidad antes de deuda', f"{results['profit_before_debt']:,.0f} Bs")
     pdf.add_metric('Utilidad después de deuda', f"{results['profit_after_debt']:,.0f} Bs")
@@ -532,27 +735,31 @@ def generate_pdf_report(results, analysis, inputs, sensitivity_data=None):
     pdf.ln(3)
     
     # Crédito Fiscal Section
-    pdf.section_title('Credito Fiscal por Compra de Activos')
-    pdf.add_metric('Credito fiscal total', f"{inputs['credito_fiscal_total']:,.0f} Bs")
-    pdf.add_metric('IVA mensual (sin credito)', f"{inputs['results_without_credit']['iva_before_credit']:,.0f} Bs")
-    pdf.add_metric('Meses de cobertura', f"{inputs['months_credit_coverage']:.1f} meses")
-    pdf.add_metric('Ahorro mensual (con credito)', f"{inputs['monthly_iva_savings']:,.0f} Bs")
-    pdf.ln(2)
-    
-    # Comparison table
-    pdf.set_font('Helvetica', 'B', 9)
-    pdf.set_text_color(40, 40, 40)
-    pdf.cell(0, 6, 'Comparacion: Con vs Sin Credito Fiscal', 0, 1, 'L')
-    pdf.ln(2)
-    
-    headers = ['Escenario', 'IVA Efectivo', 'Total Impuestos', 'Utilidad Mensual']
-    results_no_credit = inputs['results_without_credit']
-    data = [
-        ['Con Credito Fiscal', f"{results['iva_tax']:,.0f} Bs", f"{results['total_taxes']:,.0f} Bs", f"{results['profit_after_debt']:,.0f} Bs"],
-        ['Sin Credito Fiscal', f"{results_no_credit['iva_tax']:,.0f} Bs", f"{results_no_credit['total_taxes']:,.0f} Bs", f"{results_no_credit['profit_after_debt']:,.0f} Bs"],
-    ]
-    pdf.add_table(headers, data, [50, 45, 45, 50])
-    pdf.ln(5)
+    if inputs.get('iva_rate', 0.0) > 0:
+        pdf.section_title('Credito Fiscal por Compra de Activos')
+        compra_iva_label = "camion + tolva/acople" if inputs.get('tolva_con_iva', True) else "solo camion"
+        credito_fiscal_base = float(inputs.get('credito_fiscal_base', 0.0))
+        pdf.add_metric('Base con IVA', f"{credito_fiscal_base:,.0f} Bs ({compra_iva_label})")
+        pdf.add_metric('Credito fiscal total', f"{inputs['credito_fiscal_total']:,.0f} Bs")
+        pdf.add_metric('IVA mensual (sin credito)', f"{inputs['results_without_credit']['iva_before_credit']:,.0f} Bs")
+        pdf.add_metric('Meses de cobertura', f"{inputs['months_credit_coverage']:.1f} meses")
+        pdf.add_metric('Ahorro mensual (con credito)', f"{inputs['monthly_iva_savings']:,.0f} Bs")
+        pdf.ln(2)
+        
+        # Comparison table
+        pdf.set_font('Helvetica', 'B', 9)
+        pdf.set_text_color(40, 40, 40)
+        pdf.cell(0, 6, 'Comparacion: Con vs Sin Credito Fiscal', 0, 1, 'L')
+        pdf.ln(2)
+        
+        headers = ['Escenario', 'IVA Efectivo', 'Total Impuestos', 'Utilidad Mensual']
+        results_no_credit = inputs['results_without_credit']
+        data = [
+            ['Con Credito Fiscal', f"{results['iva_tax']:,.0f} Bs", f"{results['total_taxes']:,.0f} Bs", f"{results['profit_after_debt']:,.0f} Bs"],
+            ['Sin Credito Fiscal', f"{results_no_credit['iva_tax']:,.0f} Bs", f"{results_no_credit['total_taxes']:,.0f} Bs", f"{results_no_credit['profit_after_debt']:,.0f} Bs"],
+        ]
+        pdf.add_table(headers, data, [50, 45, 45, 50])
+        pdf.ln(5)
     
     # Sensitivity Analysis
     if sensitivity_data:
@@ -563,14 +770,55 @@ def generate_pdf_report(results, analysis, inputs, sensitivity_data=None):
             payback = row['Payback (años)']
             # Clean recommendation of Unicode characters
             clean_rec = row['Recomendación'].replace('✅', '').replace('👍', '').replace('⚠️', '').replace('❌', '').strip()
+            marker = "*" if row.get("Es actual") else ""
             data.append([
-                str(row['Viajes/Mes']),
+                f"{row['Viajes/Mes']}{marker}",
                 f"{row['Utilidad Neta (Bs)']:,.0f}",
                 f"{row['Utilidad Anual (Bs)']:,.0f}",
                 f"{row['Score']:.0f}",
                 clean_rec[:20]
             ])
         pdf.add_table(headers, data, [25, 40, 40, 25, 60])
+        pdf.ln(2)
+        pdf.add_paragraph("* = escenario actual en la tabla", font_size=8, color=(110, 110, 110))
+
+    # Amortization schedule
+    financed_amount = float(inputs.get("financed_amount", 0.0) or 0.0)
+    years = float(inputs.get("years", 0.0) or 0.0)
+    annual_rate = float(inputs.get("annual_rate", 0.0) or 0.0)
+    if financed_amount > 0 and years > 0:
+        schedule = amortization_schedule(financed_amount, annual_rate, years)
+        if schedule:
+            pdf.add_page()
+            pdf.section_title('Amortización del crédito')
+
+            total_paid = sum(r.get("Cuota", 0.0) for r in schedule)
+            total_interest = sum(r.get("Interés", 0.0) for r in schedule)
+            total_principal = sum(r.get("Amortización", 0.0) for r in schedule)
+
+            pdf.add_metric('Cuota mensual', f"{loan_payment(financed_amount, annual_rate, years):,.0f} Bs")
+            pdf.add_metric('Total pagado', f"{total_paid:,.0f} Bs")
+            pdf.add_metric('Interés total', f"{total_interest:,.0f} Bs")
+            pdf.add_metric('Capital amortizado', f"{total_principal:,.0f} Bs")
+            pdf.ln(3)
+
+            pdf.set_font('Helvetica', '', 8)
+            pdf.set_text_color(110, 110, 110)
+            pdf.multi_cell(0, 4, "Detalle (primeros 12 meses). Para ver el detalle completo, usa la tabla de amortización en la app.")
+            pdf.ln(2)
+
+            headers = ['Mes', 'Saldo ini.', 'Interés', 'Amort.', 'Cuota', 'Saldo fin.']
+            rows = []
+            for r in schedule[:12]:
+                rows.append([
+                    str(r.get("Mes", "")),
+                    f"{float(r.get('Saldo inicial', 0.0)):,.0f}",
+                    f"{float(r.get('Interés', 0.0)):,.0f}",
+                    f"{float(r.get('Amortización', 0.0)):,.0f}",
+                    f"{float(r.get('Cuota', 0.0)):,.0f}",
+                    f"{float(r.get('Saldo final', 0.0)):,.0f}",
+                ])
+            pdf.add_table(headers, rows, [12, 36, 26, 26, 26, 36])
     
     # Generate the PDF bytes
     pdf_output = io.BytesIO()
@@ -719,6 +967,7 @@ price_per_m3 = st.sidebar.number_input(
 trips_per_month = st.sidebar.number_input(
     "Viajes por mes", min_value=0.0, value=22.0, step=1.0
 )
+trips_per_month_int = int(trips_per_month)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🤝 Mejor Cliente (Opcional)")
@@ -739,12 +988,13 @@ better_rate = st.sidebar.number_input(
 )
 
 better_rate_trips = st.sidebar.number_input(
-    "Viajes a mejor tarifa (por mes)",
-    min_value=0.0,
-    value=5.0,
-    step=1.0,
+    "Viajes reasignados a mejor tarifa (por mes)",
+    min_value=0,
+    max_value=max(0, trips_per_month_int),
+    value=min(5, max(0, trips_per_month_int)),
+    step=1,
     disabled=not enable_better_client,
-    help="Cantidad de viajes adicionales que harías a la mejor tarifa"
+    help="Cantidad de viajes que cambias del cliente actual al mejor cliente (no suma viajes)."
 )
 
 st.sidebar.markdown("---")
@@ -776,16 +1026,88 @@ other_costs = st.sidebar.number_input(
 st.sidebar.markdown("---")
 st.sidebar.subheader("🧾 Impuestos")
 
-iva_rate = st.sidebar.number_input(
-    "IVA (%)", min_value=0.0, max_value=100.0, value=13.0, step=0.5, format="%.1f"
+aplica_iva = st.sidebar.checkbox(
+    "Aplicar IVA",
+    value=True,
+    help="Desactiva si tu operación no paga/cobra IVA (no hay IVA ni crédito fiscal).",
+)
+
+iva_rate_input = st.sidebar.number_input(
+    "IVA (%)",
+    min_value=0.0,
+    max_value=100.0,
+    value=13.0,
+    step=0.5,
+    format="%.1f",
+    disabled=not aplica_iva,
 ) / 100.0
+
+iva_rate = iva_rate_input if aplica_iva else 0.0
+
+tolva_con_iva = st.sidebar.checkbox(
+    "Tolva / acople con IVA (para crédito fiscal)",
+    value=True,
+    disabled=not aplica_iva,
+    help="Si la tolva/acople no tiene factura con IVA, desactívalo para que el crédito fiscal venga solo del camión.",
+)
 it_rate = st.sidebar.number_input(
     "IT (%)", min_value=0.0, max_value=100.0, value=3.0, step=0.5, format="%.1f"
 ) / 100.0
 
+# ------------- Saved Analyses Section -------------
+st.sidebar.markdown("---")
+st.sidebar.subheader("💾 Análisis Guardados")
+
+# Initialize session state for analysis name
+if "analysis_save_name" not in st.session_state:
+    st.session_state.analysis_save_name = ""
+
+# Load saved analyses
+saved_analyses = db.get_investment_analyses()
+
+# Display saved analyses list
+if saved_analyses:
+    st.sidebar.caption(f"{len(saved_analyses)} análisis guardados")
+    
+    for saved in saved_analyses:
+        col1, col2 = st.sidebar.columns([3, 1])
+        with col1:
+            created = saved["created_at"][:10] if saved["created_at"] else ""
+            st.sidebar.text(f"📊 {saved['name']}\n   {created}")
+        with col2:
+            if st.sidebar.button("🗑️", key=f"del_{saved['id']}", help="Eliminar"):
+                db.delete_investment_analysis(saved['id'])
+                st.rerun()
+    
+    # Load analysis selector
+    analysis_options = [(s["id"], s["name"]) for s in saved_analyses]
+    selected_analysis = st.sidebar.selectbox(
+        "Cargar análisis",
+        options=analysis_options,
+        format_func=lambda x: x[1],
+        key="load_analysis_select"
+    )
+    
+    if st.sidebar.button("📂 Cargar Análisis", use_container_width=True):
+        loaded = db.get_investment_analysis(selected_analysis[0])
+        if loaded and loaded["inputs"]:
+            # Store loaded inputs in session state for next rerun
+            st.session_state.loaded_analysis = loaded["inputs"]
+            st.sidebar.success(f"✅ Análisis '{loaded['name']}' cargado")
+            st.rerun()
+else:
+    st.sidebar.caption("No hay análisis guardados")
+
+# Apply loaded analysis values (if any)
+if "loaded_analysis" in st.session_state:
+    st.sidebar.info("ℹ️ Valores cargados del análisis guardado. Modifique los inputs en la barra lateral para aplicar.")
+    # Clear the loaded state after displaying
+    del st.session_state.loaded_analysis
+
 # ------------- Compute -------------
-# Calculate crédito fiscal from asset purchase (IVA paid on truck + trailer)
-credito_fiscal_total = (truck_price + trailer_price) * iva_rate
+# Calculate crédito fiscal from asset purchase (IVA paid on billed assets)
+credito_fiscal_base = truck_price + (trailer_price if tolva_con_iva else 0.0)
+credito_fiscal_total = credito_fiscal_base * iva_rate
 
 # First compute results WITHOUT crédito fiscal (baseline / after credit exhausted)
 results_without_credit = monthly_cashflow(
@@ -847,16 +1169,17 @@ profit_difference = results_with_credit["profit_after_debt"] - results_without_c
 
 # ------------- Better Client Scenario Calculations -------------
 better_client_results = None
-if enable_better_client and better_rate_trips > 0:
-    # Calculate total trips in mixed scenario
-    total_trips_mixed = trips_per_month + better_rate_trips
+if enable_better_client and better_rate_trips > 0 and trips_per_month > 0:
+    # Reallocate trips: keep total trips constant, switch some trips to better rate
+    total_trips_mixed = trips_per_month
+    trips_current_rate = max(0.0, trips_per_month - float(better_rate_trips))
     
     # Calculate mixed revenue
-    revenue_current_rate = trips_per_month * m3_per_trip * price_per_m3
-    revenue_better_rate = better_rate_trips * m3_per_trip * better_rate
+    revenue_current_rate = trips_current_rate * m3_per_trip * price_per_m3
+    revenue_better_rate = float(better_rate_trips) * m3_per_trip * better_rate
     mixed_monthly_revenue = revenue_current_rate + revenue_better_rate
     
-    # Calculate adjusted diesel and toll cost (more trips = more costs)
+    # Costs: total trips unchanged
     mixed_diesel_cost = diesel_cost_per_trip * total_trips_mixed
     mixed_toll_cost = toll_cost_per_trip * total_trips_mixed
     
@@ -869,7 +1192,7 @@ if enable_better_client and better_rate_trips > 0:
     mixed_it_tax = mixed_monthly_revenue * it_rate
     
     # Apply crédito fiscal (same as current scenario for comparison)
-    mixed_credito_used = min(monthly_iva_full, mixed_iva_before_credit)
+    mixed_credito_used = min(monthly_iva_full, mixed_iva_before_credit) if iva_rate > 0 else 0.0
     mixed_iva_tax = mixed_iva_before_credit - mixed_credito_used
     mixed_total_taxes = mixed_iva_tax + mixed_it_tax
     
@@ -885,8 +1208,8 @@ if enable_better_client and better_rate_trips > 0:
     
     better_client_results = {
         "total_trips": total_trips_mixed,
-        "trips_current_rate": trips_per_month,
-        "trips_better_rate": better_rate_trips,
+        "trips_current_rate": trips_current_rate,
+        "trips_better_rate": float(better_rate_trips),
         "revenue_current_rate": revenue_current_rate,
         "revenue_better_rate": revenue_better_rate,
         "monthly_revenue": mixed_monthly_revenue,
@@ -936,11 +1259,14 @@ with col2:
     
     # Show taxes breakdown
     st.markdown("**🧾 Impuestos:**")
-    tax_col1, tax_col2 = st.columns(2)
-    with tax_col1:
-        st.write(f"IVA (13%): {results['iva_tax']:,.0f} Bs")
-    with tax_col2:
-        st.write(f"IT (3%): {results['it_tax']:,.0f} Bs")
+    if iva_rate > 0:
+        tax_col1, tax_col2 = st.columns(2)
+        with tax_col1:
+            st.write(f"IVA ({iva_rate*100:.1f}%): {results['iva_tax']:,.0f} Bs")
+        with tax_col2:
+            st.write(f"IT ({it_rate*100:.1f}%): {results['it_tax']:,.0f} Bs")
+    else:
+        st.write(f"IT ({it_rate*100:.1f}%): {results['it_tax']:,.0f} Bs")
     st.metric("Total impuestos", f"{results['total_taxes']:,.0f} Bs")
     
     st.metric("Utilidad antes de deuda", f"{results['profit_before_debt']:,.0f} Bs")
@@ -962,71 +1288,77 @@ st.write(f"**Utilidad neta anual estimada:** {annual_profit:,.0f} Bs")
 
 # ------------- Crédito Fiscal Section -------------
 st.markdown("---")
-st.header("🧾 Crédito Fiscal por Compra de Activos")
+if iva_rate > 0:
+    st.header("🧾 Crédito Fiscal por Compra de Activos")
+    compra_iva_label = "camión + tolva/acople" if tolva_con_iva else "solo camión"
 
-st.markdown(f"""
-Al comprar el camión y el acople, pagas **13% IVA** sobre el precio de compra. 
-Este IVA pagado se convierte en **crédito fiscal** que puedes usar para compensar 
-el IVA que debes pagar por tus ingresos mensuales.
-""")
-
-cf_col1, cf_col2, cf_col3 = st.columns(3)
-
-with cf_col1:
-    st.metric(
-        "Crédito Fiscal Total",
-        f"{credito_fiscal_total:,.0f} Bs",
-        help="13% del valor de compra del camión + acople"
-    )
-
-with cf_col2:
-    st.metric(
-        "IVA Mensual (sin crédito)",
-        f"{monthly_iva_full:,.0f} Bs",
-        help="IVA que pagarías normalmente sobre tus ingresos"
-    )
-
-with cf_col3:
-    st.metric(
-        "Meses de Cobertura",
-        f"{months_credit_coverage:.1f} meses",
-        help="Tiempo que el crédito fiscal cubre tu IVA mensual"
-    )
-
-# Comparison table
-st.markdown("### 📊 Comparación: Con vs Sin Crédito Fiscal")
-
-comparison_col1, comparison_col2 = st.columns(2)
-
-with comparison_col1:
     st.markdown(f"""
-    <div style="padding: 15px; background: rgba(40, 167, 69, 0.1); border-radius: 10px; border: 1px solid #28a745;">
-        <h4 style="color: #28a745; margin: 0 0 10px 0;">✅ Con Crédito Fiscal</h4>
-        <p style="color: #888; margin: 5px 0; font-size: 0.9em;">Primeros {months_credit_coverage:.0f} meses</p>
-        <p style="color: #ccc; margin: 5px 0;">IVA efectivo: <strong style="color: #28a745;">{results_with_credit['iva_tax']:,.0f} Bs</strong></p>
-        <p style="color: #ccc; margin: 5px 0;">Total impuestos: <strong>{results_with_credit['total_taxes']:,.0f} Bs</strong></p>
-        <p style="color: #ccc; margin: 5px 0;">Utilidad mensual: <strong style="color: #28a745;">{results_with_credit['profit_after_debt']:,.0f} Bs</strong></p>
-        <p style="color: #ccc; margin: 5px 0;">Utilidad anual: <strong>{results_with_credit['profit_after_debt'] * 12:,.0f} Bs</strong></p>
-    </div>
-    """, unsafe_allow_html=True)
+    Al comprar el camión (y la tolva/acople si tiene factura), pagas **{iva_rate*100:.1f}% IVA** sobre el valor facturado con IVA (**{compra_iva_label}**). 
+    Este IVA pagado se convierte en **crédito fiscal** que puedes usar para compensar 
+    el IVA que debes pagar por tus ingresos mensuales.
+    """)
 
-with comparison_col2:
-    st.markdown(f"""
-    <div style="padding: 15px; background: rgba(255, 193, 7, 0.1); border-radius: 10px; border: 1px solid #ffc107;">
-        <h4 style="color: #ffc107; margin: 0 0 10px 0;">⚠️ Sin Crédito Fiscal</h4>
-        <p style="color: #888; margin: 5px 0; font-size: 0.9em;">Después de agotar el crédito</p>
-        <p style="color: #ccc; margin: 5px 0;">IVA efectivo: <strong style="color: #ffc107;">{results_without_credit['iva_tax']:,.0f} Bs</strong></p>
-        <p style="color: #ccc; margin: 5px 0;">Total impuestos: <strong>{results_without_credit['total_taxes']:,.0f} Bs</strong></p>
-        <p style="color: #ccc; margin: 5px 0;">Utilidad mensual: <strong style="color: #ffc107;">{results_without_credit['profit_after_debt']:,.0f} Bs</strong></p>
-        <p style="color: #ccc; margin: 5px 0;">Utilidad anual: <strong>{results_without_credit['profit_after_debt'] * 12:,.0f} Bs</strong></p>
-    </div>
-    """, unsafe_allow_html=True)
+    cf_col1, cf_col2, cf_col3 = st.columns(3)
 
-# Monthly savings highlight
-st.info(f"""
-💰 **Ahorro mensual con crédito fiscal:** {monthly_iva_savings:,.0f} Bs  
-📈 **Ganancia adicional durante {months_credit_coverage:.0f} meses:** {credito_fiscal_total:,.0f} Bs (el total del crédito fiscal)
-""")
+    with cf_col1:
+        st.metric(
+            "Crédito Fiscal Total",
+            f"{credito_fiscal_total:,.0f} Bs",
+            help=f"{iva_rate*100:.1f}% de {credito_fiscal_base:,.0f} Bs (base con IVA: {compra_iva_label})",
+        )
+        st.caption(f"Base con IVA: {credito_fiscal_base:,.0f} Bs ({compra_iva_label})")
+
+    with cf_col2:
+        st.metric(
+            "IVA Mensual (sin crédito)",
+            f"{monthly_iva_full:,.0f} Bs",
+            help="IVA que pagarías normalmente sobre tus ingresos",
+        )
+
+    with cf_col3:
+        st.metric(
+            "Meses de Cobertura",
+            f"{months_credit_coverage:.1f} meses",
+            help="Tiempo que el crédito fiscal cubre tu IVA mensual",
+        )
+
+    # Comparison table
+    st.markdown("### 📊 Comparación: Con vs Sin Crédito Fiscal")
+
+    comparison_col1, comparison_col2 = st.columns(2)
+
+    with comparison_col1:
+        st.markdown(f"""
+        <div style="padding: 15px; background: rgba(40, 167, 69, 0.1); border-radius: 10px; border: 1px solid #28a745;">
+            <h4 style="color: #28a745; margin: 0 0 10px 0;">✅ Con Crédito Fiscal</h4>
+            <p style="color: #888; margin: 5px 0; font-size: 0.9em;">Primeros {months_credit_coverage:.0f} meses</p>
+            <p style="color: #ccc; margin: 5px 0;">IVA efectivo: <strong style="color: #28a745;">{results_with_credit['iva_tax']:,.0f} Bs</strong></p>
+            <p style="color: #ccc; margin: 5px 0;">Total impuestos: <strong>{results_with_credit['total_taxes']:,.0f} Bs</strong></p>
+            <p style="color: #ccc; margin: 5px 0;">Utilidad mensual: <strong style="color: #28a745;">{results_with_credit['profit_after_debt']:,.0f} Bs</strong></p>
+            <p style="color: #ccc; margin: 5px 0;">Utilidad anual: <strong>{results_with_credit['profit_after_debt'] * 12:,.0f} Bs</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with comparison_col2:
+        st.markdown(f"""
+        <div style="padding: 15px; background: rgba(255, 193, 7, 0.1); border-radius: 10px; border: 1px solid #ffc107;">
+            <h4 style="color: #ffc107; margin: 0 0 10px 0;">⚠️ Sin Crédito Fiscal</h4>
+            <p style="color: #888; margin: 5px 0; font-size: 0.9em;">Después de agotar el crédito</p>
+            <p style="color: #ccc; margin: 5px 0;">IVA efectivo: <strong style="color: #ffc107;">{results_without_credit['iva_tax']:,.0f} Bs</strong></p>
+            <p style="color: #ccc; margin: 5px 0;">Total impuestos: <strong>{results_without_credit['total_taxes']:,.0f} Bs</strong></p>
+            <p style="color: #ccc; margin: 5px 0;">Utilidad mensual: <strong style="color: #ffc107;">{results_without_credit['profit_after_debt']:,.0f} Bs</strong></p>
+            <p style="color: #ccc; margin: 5px 0;">Utilidad anual: <strong>{results_without_credit['profit_after_debt'] * 12:,.0f} Bs</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Monthly savings highlight
+    st.info(f"""
+    💰 **Ahorro mensual con crédito fiscal:** {monthly_iva_savings:,.0f} Bs  
+    📈 **Ganancia adicional durante {months_credit_coverage:.0f} meses:** {credito_fiscal_total:,.0f} Bs (el total del crédito fiscal)
+    """)
+else:
+    st.header("🧾 IVA / Crédito Fiscal")
+    st.info("IVA desactivado: no se calcula IVA ni aplica crédito fiscal por compra de activos.")
 
 # ------------- Better Client Opportunity Section -------------
 if enable_better_client and better_client_results:
@@ -1034,7 +1366,7 @@ if enable_better_client and better_client_results:
     st.header("🤝 Oportunidad: Mejor Cliente")
     
     st.markdown(f"""
-    Este análisis muestra el impacto de conseguir **{better_rate_trips:.0f} viajes adicionales** 
+    Este análisis muestra el impacto de **reasignar {better_rate_trips:.0f} de tus {trips_per_month:.0f} viajes/mes**
     a una tarifa de **{better_rate:.0f} Bs/m³** (vs tu tarifa actual de {price_per_m3:.0f} Bs/m³).
     """)
     
@@ -1043,10 +1375,9 @@ if enable_better_client and better_client_results:
     
     with bc_col1:
         st.metric(
-            "Total viajes/mes",
-            f"{better_client_results['total_trips']:.0f}",
-            delta=f"+{better_rate_trips:.0f}",
-            help="Viajes actuales + viajes a mejor tarifa"
+            "Viajes a mejor tarifa",
+            f"{better_client_results['trips_better_rate']:.0f}",
+            help=f"De {trips_per_month:.0f} viajes/mes, {better_client_results['trips_current_rate']:.0f} quedan a tarifa actual."
         )
     
     with bc_col2:
@@ -1098,7 +1429,7 @@ if enable_better_client and better_client_results:
         st.markdown(f"""
         <div style="padding: 15px; background: rgba(40, 167, 69, 0.1); border-radius: 10px; border: 1px solid #28a745;">
             <h4 style="color: #28a745; margin: 0 0 10px 0;">🚀 Con Mejor Cliente</h4>
-            <p style="color: #888; margin: 5px 0; font-size: 0.9em;">{trips_per_month:.0f} viajes a {price_per_m3:.0f} Bs/m³ + {better_rate_trips:.0f} viajes a {better_rate:.0f} Bs/m³</p>
+            <p style="color: #888; margin: 5px 0; font-size: 0.9em;">{better_client_results['trips_current_rate']:.0f} viajes a {price_per_m3:.0f} Bs/m³ + {better_client_results['trips_better_rate']:.0f} viajes a {better_rate:.0f} Bs/m³</p>
             <p style="color: #ccc; margin: 5px 0;">Ingresos: <strong style="color: #28a745;">{better_client_results['monthly_revenue']:,.0f} Bs</strong></p>
             <p style="color: #ccc; margin: 5px 0;">Costos operativos: <strong>{better_client_results['operating_costs']:,.0f} Bs</strong></p>
             <p style="color: #ccc; margin: 5px 0;">Utilidad mensual: <strong style="color: #28a745;">{better_client_results['profit_after_debt']:,.0f} Bs</strong></p>
@@ -1149,25 +1480,28 @@ if enable_better_client and better_client_results:
     # Line chart: Profit improvement as better-rate trips increase
     st.markdown("### 📈 Impacto de Viajes a Mejor Tarifa")
     
-    # Generate data for 0 to max_better_trips scenarios
-    max_better_trips_chart = int(max(15, better_rate_trips * 2))
+    # Generate data for 0..total trips (reallocation within same monthly trips)
+    max_better_trips_chart = max(0, trips_per_month_int)
     better_trips_range = list(range(0, max_better_trips_chart + 1))
     profit_by_better_trips = []
     
     for bt in better_trips_range:
-        # Calculate scenario with bt better-rate trips
-        scenario_total_trips = trips_per_month + bt
-        scenario_revenue_current = trips_per_month * m3_per_trip * price_per_m3
-        scenario_revenue_better = bt * m3_per_trip * better_rate
+        # Scenario: bt trips at better rate, remaining trips at current rate (total trips constant)
+        scenario_total_trips = trips_per_month
+        scenario_trips_current = max(0.0, trips_per_month - float(bt))
+        scenario_revenue_current = scenario_trips_current * m3_per_trip * price_per_m3
+        scenario_revenue_better = float(bt) * m3_per_trip * better_rate
         scenario_total_revenue = scenario_revenue_current + scenario_revenue_better
         
-        # Adjusted diesel and toll cost
+        # Costs (total trips unchanged)
         scenario_diesel = diesel_cost_per_trip * scenario_total_trips
         scenario_toll = toll_cost_per_trip * scenario_total_trips
         scenario_operating = scenario_diesel + scenario_toll + driver_salary + maintenance_cost + other_costs
         
-        # Taxes
-        scenario_iva = scenario_total_revenue * iva_rate
+        # Taxes (match the same crédito fiscal logic used above)
+        scenario_iva_before_credit = scenario_total_revenue * iva_rate
+        scenario_credito_used = min(monthly_iva_full, scenario_iva_before_credit) if iva_rate > 0 else 0.0
+        scenario_iva = scenario_iva_before_credit - scenario_credito_used
         scenario_it = scenario_total_revenue * it_rate
         scenario_taxes = scenario_iva + scenario_it
         
@@ -1216,7 +1550,7 @@ if enable_better_client and better_client_results:
             )
     
     fig_better_trips.update_layout(
-        xaxis_title="Viajes adicionales a mejor tarifa",
+        xaxis_title="Viajes reasignados a mejor tarifa",
         yaxis_title="Utilidad Mensual (Bs)",
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
@@ -1237,7 +1571,8 @@ if enable_better_client and better_client_results:
     
     st.plotly_chart(fig_better_trips, use_container_width=True)
     
-    st.caption(f"Cada viaje adicional a {better_rate:.0f} Bs/m³ aumenta tus ingresos en {m3_per_trip * better_rate:,.0f} Bs (menos {diesel_cost_per_trip:,.0f} Bs de diesel)")
+    delta_ingreso_por_viaje = m3_per_trip * (better_rate - price_per_m3)
+    st.caption(f"Cada viaje reasignado de {price_per_m3:.0f} → {better_rate:.0f} Bs/m³ cambia ingresos en {delta_ingreso_por_viaje:,.0f} Bs (antes de impuestos).")
     
     # Analysis insight
     rate_difference = better_rate - price_per_m3
@@ -1245,24 +1580,57 @@ if enable_better_client and better_client_results:
     
     if better_client_results['profit_increase'] > 0:
         st.success(f"""
-        💡 **Resumen:** Conseguir {better_rate_trips:.0f} viajes a {better_rate:.0f} Bs/m³ (un {rate_pct_increase:.0f}% más que tu tarifa actual) 
+        💡 **Resumen:** Reasignar {better_rate_trips:.0f} viajes a {better_rate:.0f} Bs/m³ (un {rate_pct_increase:.0f}% más que tu tarifa actual) 
         aumentaría tu utilidad en **{better_client_results['profit_increase']:,.0f} Bs/mes** ({annual_profit_increase:,.0f} Bs/año).
         """)
     else:
         st.warning(f"""
-        ⚠️ **Atención:** El aumento en costos de diesel por los viajes adicionales supera los ingresos extra. 
-        Considera negociar una tarifa más alta o reducir los costos por viaje.
+        ⚠️ **Atención:** Esta reasignación no mejora tu utilidad (la tarifa del "mejor cliente" no es suficientemente alta vs tu tarifa actual, considerando impuestos).
+        Considera negociar una tarifa más alta o ajustar la mezcla de viajes.
         """)
 
 # ------------- Investment Analysis Section -------------
 st.markdown("---")
 st.header("🔍 Análisis de Viabilidad de la Inversión")
 
-analysis = analyze_investment(results, financed_amount, years, results["investment_total"])
+# If "Mejor Cliente" is enabled, run viability analysis on that scenario's cashflow
+analysis_results = results
+analysis_context = "Escenario actual"
+if enable_better_client and better_client_results:
+    analysis_context = "Escenario con mejor cliente"
+    analysis_results = dict(results)
+    analysis_results.update(
+        {
+            "monthly_revenue": better_client_results["monthly_revenue"],
+            "operating_costs": better_client_results["operating_costs"],
+            "iva_tax": better_client_results.get("iva_tax", analysis_results.get("iva_tax", 0.0)),
+            "it_tax": better_client_results.get("it_tax", analysis_results.get("it_tax", 0.0)),
+            "total_taxes": better_client_results.get("total_taxes", analysis_results.get("total_taxes", 0.0)),
+            "total_costs": better_client_results["operating_costs"]
+            + better_client_results.get("total_taxes", analysis_results.get("total_taxes", 0.0)),
+            "profit_before_debt": better_client_results["profit_before_debt"],
+            "profit_after_debt": better_client_results["profit_after_debt"],
+            "payback_years": better_client_results["payback_years"],
+        }
+    )
+
+st.caption(f"Evaluado sobre: **{analysis_context}**")
+analysis = analyze_investment(analysis_results, financed_amount, years, results["investment_total"])
 
 # Prepare inputs for PDF
 pdf_inputs = {
     'truck_name': truck_name,
+    'analysis_context': analysis_context,
+    'truck_price': truck_price,
+    'trailer_price': trailer_price,
+    'capital': capital,
+    'reserve_min': reserve_min,
+    'better_client_enabled': bool(enable_better_client and better_client_results),
+    'better_rate': float(better_rate) if enable_better_client else 0.0,
+    'better_rate_trips': float(better_rate_trips) if enable_better_client else 0.0,
+    'base_price_per_m3': float(price_per_m3),
+    'baseline_results': results,
+    'better_client_results': better_client_results,
     'financed_amount': financed_amount,
     'annual_rate': annual_rate,
     'years': years,
@@ -1278,6 +1646,8 @@ pdf_inputs = {
     'other_costs': other_costs,
     'iva_rate': iva_rate,
     'it_rate': it_rate,
+    'tolva_con_iva': tolva_con_iva,
+    'credito_fiscal_base': credito_fiscal_base,
     'credito_fiscal_total': credito_fiscal_total,
     'months_credit_coverage': months_credit_coverage,
     'monthly_iva_savings': monthly_iva_savings,
@@ -1523,7 +1893,7 @@ pdf_col1, pdf_col2 = st.columns([1, 3])
 
 with pdf_col1:
     # Generate PDF with all data
-    pdf_bytes = generate_pdf_report(results, analysis, pdf_inputs, sensitivity_data)
+    pdf_bytes = generate_pdf_report(analysis_results, analysis, pdf_inputs, sensitivity_data)
     
     st.download_button(
         label="📥 Descargar Análisis PDF",
@@ -1542,6 +1912,40 @@ with pdf_col2:
         </p>
     </div>
     """, unsafe_allow_html=True)
+
+# Save Analysis Section
+st.markdown("---")
+st.subheader("💾 Guardar Análisis")
+
+save_col1, save_col2 = st.columns([2, 1])
+
+with save_col1:
+    analysis_name = st.text_input(
+        "Nombre del análisis",
+        value=f"{truck_name} - {datetime.now().strftime('%d/%m/%Y')}",
+        placeholder="Ej: Análisis SITRAK - Enero 2025",
+        key="save_analysis_name"
+    )
+
+with save_col2:
+    st.markdown("<br>", unsafe_allow_html=True)  # Spacing to align with input
+    if st.button("💾 Guardar Análisis", use_container_width=True):
+        if analysis_name.strip():
+            # Prepare serializable results (remove non-JSON serializable items)
+            results_to_save = {k: v for k, v in analysis_results.items() if not isinstance(v, (pd.DataFrame,))}
+            analysis_to_save = {k: v for k, v in analysis.items() if k != "metrics" or isinstance(v, list)}
+            
+            db.save_investment_analysis(
+                name=analysis_name.strip(),
+                truck_name=truck_name,
+                inputs=pdf_inputs,
+                results=results_to_save,
+                analysis=analysis_to_save
+            )
+            st.success(f"✅ Análisis '{analysis_name}' guardado exitosamente")
+            st.rerun()
+        else:
+            st.error("Por favor ingresa un nombre para el análisis")
 
 st.markdown("---")
 
