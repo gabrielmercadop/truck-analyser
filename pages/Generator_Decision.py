@@ -556,3 +556,11 @@ with save_col2:
         else:
             st.error("Por favor ingresa un nombre para el escenario")
 
+
+
+
+
+
+
+
+

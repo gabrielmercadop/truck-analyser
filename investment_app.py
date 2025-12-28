@@ -2063,6 +2063,764 @@ if compare_trips != current_trips:
             st.info(f"📊 Con **{compare_trips} viajes/mes** tendrías **{annual_diff:,.0f} Bs de diferencia anual**")
 
 st.markdown("---")
+
+# ------------- Diesel Price Impact Analysis -------------
+st.header("⛽ Impacto del Precio del Diesel")
+
+st.markdown(f"""
+Este análisis muestra cómo los cambios en el precio del diesel afectan tu rentabilidad.
+Actualmente gastas **{diesel_cost_per_trip:,.0f} Bs por viaje** en diesel.
+""")
+
+# Calculate current diesel price per liter (assuming consumption)
+diesel_col1, diesel_col2 = st.columns(2)
+
+with diesel_col1:
+    st.subheader("🔧 Parámetros de Diesel")
+    
+    # Get current diesel price and consumption
+    current_diesel_price = st.number_input(
+        "Precio actual del diesel (Bs/litro)",
+        min_value=0.01,
+        value=3.72,
+        step=0.01,
+        format="%.2f",
+        help="Precio actual por litro de diesel"
+    )
+    
+    liters_per_trip = st.number_input(
+        "Litros consumidos por viaje",
+        min_value=1.0,
+        value=round(diesel_cost_per_trip / 3.72, 1) if diesel_cost_per_trip > 0 else 215.0,
+        step=5.0,
+        format="%.1f",
+        help="Consumo de diesel por viaje (calculado o ingrese manualmente)"
+    )
+    
+    # Calculate actual diesel cost from price and consumption
+    calculated_diesel_per_trip = liters_per_trip * current_diesel_price
+    
+    st.info(f"""
+    📊 **Cálculo verificado:**  
+    {liters_per_trip:.0f} L × {current_diesel_price:.2f} Bs/L = **{calculated_diesel_per_trip:,.0f} Bs/viaje**
+    """)
+
+with diesel_col2:
+    st.subheader("📈 Escenario de Aumento")
+    
+    new_diesel_price = st.number_input(
+        "Nuevo precio del diesel (Bs/litro)",
+        min_value=0.01,
+        value=6.50,
+        step=0.10,
+        format="%.2f",
+        help="Precio proyectado del diesel para análisis de impacto"
+    )
+    
+    price_increase_pct = ((new_diesel_price - current_diesel_price) / current_diesel_price) * 100 if current_diesel_price > 0 else 0
+    new_diesel_per_trip = liters_per_trip * new_diesel_price
+    diesel_increase_per_trip = new_diesel_per_trip - calculated_diesel_per_trip
+    
+    st.warning(f"""
+    📈 **Aumento del {price_increase_pct:.1f}%**  
+    Nuevo costo: {liters_per_trip:.0f} L × {new_diesel_price:.2f} Bs/L = **{new_diesel_per_trip:,.0f} Bs/viaje**  
+    Diferencia: **+{diesel_increase_per_trip:,.0f} Bs/viaje**
+    """)
+
+# Calculate impact on monthly operations
+st.markdown("---")
+st.subheader("💰 Impacto en tu Operación Mensual")
+
+# Current scenario (using actual diesel cost from input)
+current_monthly_diesel = diesel_cost_per_trip * trips_per_month
+current_monthly_profit = results["profit_after_debt"]
+
+# New scenario with increased diesel price
+new_monthly_diesel = new_diesel_per_trip * trips_per_month
+diesel_increase_monthly = new_monthly_diesel - current_monthly_diesel
+
+# Recalculate results with new diesel cost
+results_new_diesel = monthly_cashflow(
+    truck_price=truck_price,
+    trailer_price=trailer_price,
+    capital=capital,
+    reserve_min=reserve_min,
+    financed_amount=financed_amount,
+    annual_rate=annual_rate,
+    years=years,
+    m3_per_trip=m3_per_trip,
+    price_per_m3=price_per_m3,
+    trips_per_month=trips_per_month,
+    diesel_cost=new_monthly_diesel,
+    toll_cost=toll_cost,
+    driver_salary=driver_salary,
+    maintenance_cost=maintenance_cost,
+    other_costs=other_costs,
+    iva_rate=iva_rate,
+    it_rate=it_rate,
+    credito_fiscal_available=monthly_iva_full if iva_rate > 0 else 0.0,
+)
+
+new_monthly_profit = results_new_diesel["profit_after_debt"]
+profit_reduction = current_monthly_profit - new_monthly_profit
+profit_reduction_pct = (profit_reduction / current_monthly_profit * 100) if current_monthly_profit > 0 else 0
+
+# Display impact metrics
+impact_col1, impact_col2, impact_col3, impact_col4 = st.columns(4)
+
+with impact_col1:
+    st.metric(
+        "Diesel Actual (mes)",
+        f"{current_monthly_diesel:,.0f} Bs",
+        help=f"{trips_per_month:.0f} viajes × {diesel_cost_per_trip:,.0f} Bs"
+    )
+
+with impact_col2:
+    st.metric(
+        "Diesel Nuevo (mes)",
+        f"{new_monthly_diesel:,.0f} Bs",
+        delta=f"+{diesel_increase_monthly:,.0f} Bs",
+        delta_color="inverse"
+    )
+
+with impact_col3:
+    st.metric(
+        "Utilidad Actual",
+        f"{current_monthly_profit:,.0f} Bs/mes"
+    )
+
+with impact_col4:
+    st.metric(
+        "Utilidad con Nuevo Precio",
+        f"{new_monthly_profit:,.0f} Bs/mes",
+        delta=f"-{profit_reduction:,.0f} Bs",
+        delta_color="inverse" if profit_reduction > 0 else "normal"
+    )
+
+# ------------- IVA Credit Benefit Calculation (like Diesel_Price_Analysis.py) -------------
+st.markdown("---")
+st.subheader("🧾 Beneficio del Crédito Fiscal IVA")
+
+st.markdown("""
+Con el cambio de política, el crédito fiscal IVA pasa de **70% a 100%** de la base del diesel.
+Esto significa que con el nuevo precio, puedes recuperar más IVA, lo que **compensa parcialmente** el aumento.
+""")
+
+# Calculate IVA credits like in Diesel_Price_Analysis.py
+# Current: 13% of 70% of diesel spending (old policy)
+# New: 13% of 100% of diesel spending (new policy with higher price)
+current_monthly_diesel_for_iva = current_monthly_diesel  # Using sidebar input
+new_monthly_diesel_for_iva = new_monthly_diesel
+
+iva_credit_rate = 0.13  # 13% IVA
+old_iva_base_pct = 0.70  # Old policy: 70% base
+new_iva_base_pct = 1.00  # New policy: 100% base
+
+# Calculate IVA credits
+current_iva_credit = current_monthly_diesel_for_iva * old_iva_base_pct * iva_credit_rate
+new_iva_credit = new_monthly_diesel_for_iva * new_iva_base_pct * iva_credit_rate
+iva_benefit = new_iva_credit - current_iva_credit
+
+# Display IVA credit comparison
+iva_col1, iva_col2, iva_col3 = st.columns(3)
+
+with iva_col1:
+    st.metric(
+        "Crédito IVA Actual",
+        f"{current_iva_credit:,.0f} Bs/mes",
+        help=f"13% × 70% × {current_monthly_diesel_for_iva:,.0f} Bs"
+    )
+    st.caption(f"Base: 70% de {current_monthly_diesel_for_iva:,.0f} Bs")
+
+with iva_col2:
+    st.metric(
+        "Crédito IVA Nuevo",
+        f"{new_iva_credit:,.0f} Bs/mes",
+        help=f"13% × 100% × {new_monthly_diesel_for_iva:,.0f} Bs"
+    )
+    st.caption(f"Base: 100% de {new_monthly_diesel_for_iva:,.0f} Bs")
+
+with iva_col3:
+    st.metric(
+        "Beneficio IVA Adicional",
+        f"+{iva_benefit:,.0f} Bs/mes",
+        delta=f"+{iva_benefit:,.0f} Bs",
+        help="Diferencia entre crédito nuevo y actual"
+    )
+
+# Net impact after IVA benefit
+gross_diesel_increase = diesel_increase_monthly
+net_diesel_increase = gross_diesel_increase - iva_benefit
+iva_offset_pct = (iva_benefit / gross_diesel_increase * 100) if gross_diesel_increase > 0 else 0
+
+st.markdown(f"""
+<div style="padding: 15px; background: rgba(40, 167, 69, 0.1); border-radius: 10px; border-left: 4px solid #28a745; margin-top: 10px;">
+    <h4 style="color: #28a745; margin: 0 0 10px 0;">💰 Impacto Neto del Diesel (con IVA)</h4>
+    <table style="width: 100%; color: #ccc;">
+        <tr>
+            <td>Aumento bruto de diesel:</td>
+            <td style="text-align: right; color: #dc3545;"><strong>+{gross_diesel_increase:,.0f} Bs/mes</strong></td>
+        </tr>
+        <tr>
+            <td>Beneficio crédito IVA:</td>
+            <td style="text-align: right; color: #28a745;"><strong>-{iva_benefit:,.0f} Bs/mes</strong></td>
+        </tr>
+        <tr style="border-top: 1px solid #444;">
+            <td><strong>Aumento NETO de diesel:</strong></td>
+            <td style="text-align: right; color: #ffc107;"><strong>+{net_diesel_increase:,.0f} Bs/mes</strong></td>
+        </tr>
+    </table>
+    <p style="color: #888; margin: 10px 0 0 0; font-size: 0.9em;">
+        El beneficio IVA compensa el <strong>{iva_offset_pct:.1f}%</strong> del aumento del diesel
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# ------------- Price Adjustment Per M³ Section -------------
+st.markdown("---")
+st.subheader("📦 Ajuste de Precio por Metro Cúbico")
+
+st.markdown("""
+Esta sección te muestra **exactamente cuánto debes aumentar tu tarifa por m³** para mantener 
+la misma rentabilidad con el nuevo precio del diesel, **considerando el beneficio del IVA**.
+""")
+
+# Calculate the price adjustment needed per m³ using NET diesel increase
+m3_total_month = m3_per_trip * trips_per_month
+
+# Gross increase (without IVA benefit)
+diesel_increase_per_m3_gross = diesel_increase_monthly / m3_total_month if m3_total_month > 0 else 0
+
+# Net increase (with IVA benefit)
+diesel_increase_per_m3_net = net_diesel_increase / m3_total_month if m3_total_month > 0 else 0
+iva_benefit_per_m3 = iva_benefit / m3_total_month if m3_total_month > 0 else 0
+
+# To maintain the same profit, we need to increase revenue by the NET diesel increase
+# But we also need to account for taxes on the additional revenue
+# Additional revenue needed = net_diesel_increase / (1 - tax_rate_on_revenue)
+effective_tax_rate = iva_rate + it_rate
+if effective_tax_rate < 1:
+    gross_increase_needed_per_m3 = diesel_increase_per_m3_net / (1 - effective_tax_rate)
+else:
+    gross_increase_needed_per_m3 = diesel_increase_per_m3_net
+
+# Also calculate what it would be WITHOUT the IVA benefit for comparison
+if effective_tax_rate < 1:
+    gross_increase_without_iva_benefit = diesel_increase_per_m3_gross / (1 - effective_tax_rate)
+else:
+    gross_increase_without_iva_benefit = diesel_increase_per_m3_gross
+
+# Savings from IVA benefit
+savings_per_m3_from_iva = gross_increase_without_iva_benefit - gross_increase_needed_per_m3
+
+# New tariff needed
+new_tariff_needed = price_per_m3 + gross_increase_needed_per_m3
+tariff_increase_pct = (gross_increase_needed_per_m3 / price_per_m3 * 100) if price_per_m3 > 0 else 0
+
+# Display in prominent boxes
+price_adj_col1, price_adj_col2, price_adj_col3 = st.columns(3)
+
+with price_adj_col1:
+    st.markdown(f"""
+    <div style="padding: 20px; background: rgba(108, 117, 125, 0.2); border-radius: 12px; text-align: center; border: 2px solid #6c757d;">
+        <p style="color: #aaa; margin: 0 0 5px 0; font-size: 0.9em;">Tarifa Actual</p>
+        <h2 style="color: #fff; margin: 0;">{price_per_m3:,.0f} Bs/m³</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+with price_adj_col2:
+    st.markdown(f"""
+    <div style="padding: 20px; background: rgba(255, 193, 7, 0.2); border-radius: 12px; text-align: center; border: 2px solid #ffc107;">
+        <p style="color: #ffc107; margin: 0 0 5px 0; font-size: 0.9em;">Aumento Necesario</p>
+        <h2 style="color: #ffc107; margin: 0;">+{gross_increase_needed_per_m3:,.2f} Bs/m³</h2>
+        <p style="color: #888; margin: 5px 0 0 0; font-size: 0.8em;">+{tariff_increase_pct:.1f}%</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with price_adj_col3:
+    st.markdown(f"""
+    <div style="padding: 20px; background: rgba(40, 167, 69, 0.2); border-radius: 12px; text-align: center; border: 2px solid #28a745;">
+        <p style="color: #28a745; margin: 0 0 5px 0; font-size: 0.9em;">Nueva Tarifa Recomendada</p>
+        <h2 style="color: #28a745; margin: 0;">{new_tariff_needed:,.0f} Bs/m³</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Detailed breakdown
+st.markdown("#### 📊 Desglose del Cálculo")
+
+breakdown_col1, breakdown_col2 = st.columns(2)
+
+with breakdown_col1:
+    st.markdown(f"""
+    <div style="padding: 15px; background: #0e1117; border-radius: 10px; border-left: 4px solid #1e88e5;">
+        <h5 style="color: #1e88e5; margin: 0 0 10px 0;">Impacto del Diesel por m³</h5>
+        <table style="width: 100%; color: #ccc;">
+            <tr>
+                <td>Aumento bruto diesel/mes:</td>
+                <td style="text-align: right; color: #dc3545;"><strong>+{diesel_increase_monthly:,.0f} Bs</strong></td>
+            </tr>
+            <tr>
+                <td>Beneficio IVA/mes:</td>
+                <td style="text-align: right; color: #28a745;"><strong>-{iva_benefit:,.0f} Bs</strong></td>
+            </tr>
+            <tr>
+                <td>Aumento NETO/mes:</td>
+                <td style="text-align: right; color: #ffc107;"><strong>+{net_diesel_increase:,.0f} Bs</strong></td>
+            </tr>
+            <tr>
+                <td>Total m³ por mes:</td>
+                <td style="text-align: right;"><strong>{m3_total_month:,.0f} m³</strong></td>
+            </tr>
+            <tr style="border-top: 1px solid #444;">
+                <td>Costo neto extra por m³:</td>
+                <td style="text-align: right; color: #ffc107;"><strong>+{diesel_increase_per_m3_net:,.2f} Bs/m³</strong></td>
+            </tr>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+with breakdown_col2:
+    st.markdown(f"""
+    <div style="padding: 15px; background: #0e1117; border-radius: 10px; border-left: 4px solid #ffc107;">
+        <h5 style="color: #ffc107; margin: 0 0 10px 0;">Ajuste de Tarifa Necesario</h5>
+        <table style="width: 100%; color: #ccc;">
+            <tr>
+                <td>Sin beneficio IVA:</td>
+                <td style="text-align: right; color: #dc3545;"><strong>+{gross_increase_without_iva_benefit:,.2f} Bs/m³</strong></td>
+            </tr>
+            <tr>
+                <td>Ahorro por beneficio IVA:</td>
+                <td style="text-align: right; color: #28a745;"><strong>-{savings_per_m3_from_iva:,.2f} Bs/m³</strong></td>
+            </tr>
+            <tr style="border-top: 1px solid #444;">
+                <td><strong>Aumento REAL necesario:</strong></td>
+                <td style="text-align: right; color: #28a745;"><strong>+{gross_increase_needed_per_m3:,.2f} Bs/m³</strong></td>
+            </tr>
+            <tr>
+                <td colspan="2" style="padding-top: 8px; color: #888; font-size: 0.85em;">
+                    (Incluye ajuste por impuestos {effective_tax_rate*100:.0f}%)
+                </td>
+            </tr>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+# IVA benefit highlight
+st.info(f"""
+💡 **Gracias al beneficio del crédito fiscal IVA**, solo necesitas aumentar **{gross_increase_needed_per_m3:,.2f} Bs/m³** 
+en lugar de **{gross_increase_without_iva_benefit:,.2f} Bs/m³**. 
+¡Te ahorras **{savings_per_m3_from_iva:,.2f} Bs por cada m³** transportado!
+""")
+
+# Per-trip breakdown
+st.markdown("#### 🚛 Impacto por Viaje")
+
+trip_col1, trip_col2, trip_col3, trip_col4 = st.columns(4)
+
+increase_per_trip = gross_increase_needed_per_m3 * m3_per_trip
+
+with trip_col1:
+    st.metric(
+        "m³ por viaje",
+        f"{m3_per_trip:.0f} m³"
+    )
+
+with trip_col2:
+    st.metric(
+        "Aumento diesel/viaje",
+        f"+{diesel_increase_per_trip:,.0f} Bs"
+    )
+
+with trip_col3:
+    st.metric(
+        "Aumento tarifa/viaje",
+        f"+{increase_per_trip:,.0f} Bs",
+        help="Aumento en ingresos por viaje necesario"
+    )
+
+with trip_col4:
+    current_revenue_per_trip = m3_per_trip * price_per_m3
+    new_revenue_per_trip = m3_per_trip * new_tariff_needed
+    st.metric(
+        "Nuevo ingreso/viaje",
+        f"{new_revenue_per_trip:,.0f} Bs",
+        delta=f"+{new_revenue_per_trip - current_revenue_per_trip:,.0f} Bs"
+    )
+
+# Summary recommendation box - using Streamlit native components to avoid HTML rendering issues
+st.markdown("### ✅ Resumen: Ajuste de Tarifa Recomendado (con Beneficio IVA)")
+
+# Calculate current profit margin
+current_profit_margin = (current_monthly_profit / results["monthly_revenue"] * 100) if results["monthly_revenue"] > 0 else 0
+
+# Option 1: Maintain same ABSOLUTE profit (already calculated as new_tariff_needed)
+tariff_for_same_profit = new_tariff_needed
+
+# Option 2: Maintain same PROFIT MARGIN percentage
+# We need: new_profit / new_revenue = current_profit_margin
+# new_profit = new_revenue - new_costs
+# new_revenue - new_costs = margin * new_revenue
+# new_revenue * (1 - margin) = new_costs
+# new_revenue = new_costs / (1 - margin)
+
+# New costs with increased diesel (after IVA benefit)
+new_operating_costs_with_diesel = results["operating_costs"] + net_diesel_increase
+# Total costs including taxes need to be recalculated based on new revenue
+# This is iterative, but we can approximate:
+# new_revenue = (operating_costs + loan_payment) / (1 - margin - tax_rate)
+margin_decimal = current_profit_margin / 100
+if (1 - margin_decimal - effective_tax_rate) > 0:
+    new_revenue_for_same_margin = (new_operating_costs_with_diesel + results["monthly_payment"]) / (1 - margin_decimal - effective_tax_rate)
+else:
+    new_revenue_for_same_margin = results["monthly_revenue"] + net_diesel_increase * 2  # Fallback
+
+tariff_for_same_margin = new_revenue_for_same_margin / m3_total_month if m3_total_month > 0 else 0
+tariff_increase_for_margin = tariff_for_same_margin - price_per_m3
+tariff_increase_for_margin_pct = (tariff_increase_for_margin / price_per_m3 * 100) if price_per_m3 > 0 else 0
+
+# Show both options
+st.markdown(f"""
+**Para compensar el aumento del diesel de {current_diesel_price:.2f} a {new_diesel_price:.2f} Bs/L (+{price_increase_pct:.1f}%):**
+""")
+
+# Two columns for the two strategies
+margin_col1, margin_col2 = st.columns(2)
+
+with margin_col1:
+    st.markdown("#### 📊 Opción 1: Mantener Misma Utilidad")
+    st.caption(f"Mantener utilidad de {current_monthly_profit:,.0f} Bs/mes")
+    
+    st.metric(
+        "Nueva Tarifa",
+        f"{tariff_for_same_profit:.0f} Bs/m³",
+        delta=f"+{gross_increase_needed_per_m3:.2f} Bs/m³ (+{tariff_increase_pct:.1f}%)"
+    )
+    
+    # Calculate what the margin would be with this tariff
+    new_revenue_opt1 = tariff_for_same_profit * m3_total_month
+    new_margin_opt1 = (current_monthly_profit / new_revenue_opt1 * 100) if new_revenue_opt1 > 0 else 0
+    
+    st.warning(f"""
+    ⚠️ **Margen de ganancia baja:**
+    - Margen actual: **{current_profit_margin:.1f}%**
+    - Nuevo margen: **{new_margin_opt1:.1f}%**
+    - Diferencia: **{new_margin_opt1 - current_profit_margin:.1f}%**
+    """)
+
+with margin_col2:
+    st.markdown("#### 📈 Opción 2: Mantener Mismo Margen")
+    st.caption(f"Mantener margen de {current_profit_margin:.1f}%")
+    
+    st.metric(
+        "Nueva Tarifa",
+        f"{tariff_for_same_margin:.0f} Bs/m³",
+        delta=f"+{tariff_increase_for_margin:.2f} Bs/m³ (+{tariff_increase_for_margin_pct:.1f}%)"
+    )
+    
+    # Calculate the new profit with this tariff
+    new_profit_opt2 = new_revenue_for_same_margin * margin_decimal
+    
+    st.success(f"""
+    ✅ **Margen de ganancia igual:**
+    - Margen actual: **{current_profit_margin:.1f}%**
+    - Nuevo margen: **{current_profit_margin:.1f}%**
+    - Nueva utilidad: **{new_profit_opt2:,.0f} Bs/mes**
+    """)
+
+# Comparison summary
+increase_per_trip_opt1 = gross_increase_needed_per_m3 * m3_per_trip
+increase_per_trip_opt2 = tariff_increase_for_margin * m3_per_trip
+
+st.markdown("---")
+st.markdown("#### 📋 Comparación de Opciones")
+
+comparison_data = {
+    "Concepto": [
+        "Tarifa actual",
+        "Nueva tarifa",
+        "Aumento por m³",
+        "Aumento por viaje",
+        "Utilidad mensual",
+        "Margen de ganancia"
+    ],
+    "Opción 1 (Misma Utilidad)": [
+        f"{price_per_m3:.0f} Bs/m³",
+        f"{tariff_for_same_profit:.0f} Bs/m³",
+        f"+{gross_increase_needed_per_m3:.2f} Bs/m³",
+        f"+{increase_per_trip_opt1:,.0f} Bs",
+        f"{current_monthly_profit:,.0f} Bs",
+        f"{new_margin_opt1:.1f}% ↓"
+    ],
+    "Opción 2 (Mismo Margen)": [
+        f"{price_per_m3:.0f} Bs/m³",
+        f"{tariff_for_same_margin:.0f} Bs/m³",
+        f"+{tariff_increase_for_margin:.2f} Bs/m³",
+        f"+{increase_per_trip_opt2:,.0f} Bs",
+        f"{new_profit_opt2:,.0f} Bs ↑",
+        f"{current_profit_margin:.1f}% ="
+    ]
+}
+
+import pandas as pd
+df_comparison = pd.DataFrame(comparison_data)
+st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+
+st.success(f"""
+🧾 **Beneficio del Crédito Fiscal IVA:**
+
+- Sin beneficio IVA necesitarías: **+{gross_increase_without_iva_benefit:.2f} Bs/m³**
+- Con beneficio IVA (70% → 100%): **+{gross_increase_needed_per_m3:.2f} Bs/m³**
+- **Te ahorras: {savings_per_m3_from_iva:.2f} Bs/m³** ({iva_benefit:,.0f} Bs/mes)
+""")
+
+st.info(f"""
+💡 **Recomendación:** Si puedes negociar con tus clientes, la **Opción 2** es mejor porque mantiene 
+tu margen de ganancia del **{current_profit_margin:.1f}%** y además aumenta tu utilidad absoluta a **{new_profit_opt2:,.0f} Bs/mes**.
+""")
+
+st.markdown("---")
+
+# Impact summary box
+if new_monthly_profit > 0:
+    st.success(f"""
+    ✅ **Aún rentable** con diesel a {new_diesel_price:.2f} Bs/L  
+    
+    - Tu utilidad baja de **{current_monthly_profit:,.0f} Bs/mes** a **{new_monthly_profit:,.0f} Bs/mes** (-{profit_reduction_pct:.1f}%)
+    - Pérdida anual por aumento de diesel: **{profit_reduction * 12:,.0f} Bs/año**
+    - Sigues teniendo margen positivo para operar
+    """)
+elif new_monthly_profit == 0:
+    st.warning(f"""
+    ⚠️ **Punto de equilibrio** con diesel a {new_diesel_price:.2f} Bs/L  
+    
+    - Con este precio de diesel llegas exactamente al punto de equilibrio
+    - No generas ganancia ni pérdida
+    - Cualquier aumento adicional te pone en pérdida
+    """)
+else:
+    st.error(f"""
+    ❌ **NO RENTABLE** con diesel a {new_diesel_price:.2f} Bs/L  
+    
+    - Con este precio tendrías **pérdida de {abs(new_monthly_profit):,.0f} Bs/mes**
+    - Pérdida anual: **{abs(new_monthly_profit) * 12:,.0f} Bs/año**
+    - Necesitas subir tu tarifa o reducir viajes/costos para compensar
+    """)
+
+# Calculate break-even diesel price
+st.markdown("---")
+st.subheader("🎯 Precio Máximo de Diesel (Break-Even)")
+
+# Calculate how much diesel cost can increase before profit = 0
+# profit_after_debt = revenue - operating_costs - taxes - loan_payment
+# We need: monthly_revenue - (diesel + other_costs) - taxes - loan = 0
+# Solving for diesel: diesel = monthly_revenue - other_costs - taxes - loan
+
+if liters_per_trip > 0 and trips_per_month > 0:
+    # Fixed costs (everything except diesel)
+    fixed_operating_costs = toll_cost + driver_salary + maintenance_cost + other_costs
+    
+    # We need to find diesel_cost such that profit_after_debt = 0
+    # This is iterative because taxes depend on revenue which is fixed
+    # profit_after_debt = revenue - operating_costs - taxes - loan_payment
+    # 0 = revenue - (diesel + fixed_operating) - taxes - loan_payment
+    # diesel = revenue - fixed_operating - taxes - loan_payment
+    
+    max_monthly_diesel_for_breakeven = results["monthly_revenue"] - fixed_operating_costs - results["total_taxes"] - results["monthly_payment"]
+    
+    if max_monthly_diesel_for_breakeven > 0:
+        max_diesel_per_trip = max_monthly_diesel_for_breakeven / trips_per_month
+        max_diesel_price_per_liter = max_diesel_per_trip / liters_per_trip
+        
+        price_headroom = max_diesel_price_per_liter - current_diesel_price
+        price_headroom_pct = (price_headroom / current_diesel_price * 100) if current_diesel_price > 0 else 0
+        
+        be_col1, be_col2, be_col3 = st.columns(3)
+        
+        with be_col1:
+            st.metric(
+                "Precio Máximo Diesel",
+                f"{max_diesel_price_per_liter:.2f} Bs/L",
+                help="Precio máximo de diesel antes de entrar en pérdida"
+            )
+        
+        with be_col2:
+            st.metric(
+                "Margen de Aumento",
+                f"+{price_headroom:.2f} Bs/L",
+                help="Cuánto puede subir el diesel desde el precio actual"
+            )
+        
+        with be_col3:
+            st.metric(
+                "Margen Porcentual",
+                f"+{price_headroom_pct:.1f}%",
+                help="Porcentaje de aumento máximo tolerable"
+            )
+        
+        if price_headroom > 0:
+            st.info(f"""
+            💡 **Tu operación puede tolerar** un aumento de diesel de hasta **{price_headroom:.2f} Bs/L** 
+            (de {current_diesel_price:.2f} a {max_diesel_price_per_liter:.2f} Bs/L, un **+{price_headroom_pct:.1f}%**) 
+            antes de dejar de ser rentable.
+            """)
+        else:
+            st.error(f"""
+            ⚠️ **Atención:** Con el precio actual de diesel ya estás en o cerca del punto de equilibrio.
+            Cualquier aumento adicional afectará significativamente tu rentabilidad.
+            """)
+    else:
+        st.error("⚠️ Con los costos actuales, no hay margen para aumento de diesel - ya estás en pérdida.")
+
+# Diesel price sensitivity chart
+st.markdown("---")
+st.subheader("📊 Sensibilidad al Precio del Diesel")
+
+# Generate range of diesel prices
+diesel_prices_range = [
+    current_diesel_price * 0.8,  # -20%
+    current_diesel_price * 0.9,  # -10%
+    current_diesel_price,        # Current
+    current_diesel_price * 1.1,  # +10%
+    current_diesel_price * 1.25, # +25%
+    current_diesel_price * 1.5,  # +50%
+    current_diesel_price * 1.75, # +75%
+    current_diesel_price * 2.0,  # +100%
+]
+
+diesel_sensitivity_data = []
+for dp in diesel_prices_range:
+    scenario_diesel_per_trip = liters_per_trip * dp
+    scenario_monthly_diesel = scenario_diesel_per_trip * trips_per_month
+    
+    scenario_results = monthly_cashflow(
+        truck_price=truck_price,
+        trailer_price=trailer_price,
+        capital=capital,
+        reserve_min=reserve_min,
+        financed_amount=financed_amount,
+        annual_rate=annual_rate,
+        years=years,
+        m3_per_trip=m3_per_trip,
+        price_per_m3=price_per_m3,
+        trips_per_month=trips_per_month,
+        diesel_cost=scenario_monthly_diesel,
+        toll_cost=toll_cost,
+        driver_salary=driver_salary,
+        maintenance_cost=maintenance_cost,
+        other_costs=other_costs,
+        iva_rate=iva_rate,
+        it_rate=it_rate,
+    )
+    
+    change_pct = ((dp - current_diesel_price) / current_diesel_price * 100) if current_diesel_price > 0 else 0
+    
+    diesel_sensitivity_data.append({
+        "Precio Diesel (Bs/L)": round(dp, 2),
+        "Cambio (%)": f"{change_pct:+.0f}%",
+        "Costo Diesel/Mes (Bs)": round(scenario_monthly_diesel, 0),
+        "Utilidad Mensual (Bs)": round(scenario_results["profit_after_debt"], 0),
+        "Utilidad Anual (Bs)": round(scenario_results["profit_after_debt"] * 12, 0),
+        "Rentable": "✅ Sí" if scenario_results["profit_after_debt"] > 0 else "❌ No",
+        "Es Actual": dp == current_diesel_price,
+    })
+
+df_diesel_sensitivity = pd.DataFrame(diesel_sensitivity_data)
+
+# Chart and table side by side
+diesel_chart_col, diesel_table_col = st.columns([1.2, 1])
+
+with diesel_chart_col:
+    # Create line chart for diesel price vs profit
+    fig_diesel = go.Figure()
+    
+    prices = [d["Precio Diesel (Bs/L)"] for d in diesel_sensitivity_data]
+    profits = [d["Utilidad Mensual (Bs)"] for d in diesel_sensitivity_data]
+    
+    # Color coding based on profitability
+    colors = ['#28a745' if p > 0 else '#dc3545' for p in profits]
+    
+    fig_diesel.add_trace(go.Scatter(
+        x=prices,
+        y=profits,
+        mode='lines+markers',
+        name='Utilidad Mensual',
+        line=dict(color='#1e88e5', width=3),
+        marker=dict(size=10, color=colors, line=dict(width=2, color='white')),
+        fill='tozeroy',
+        fillcolor='rgba(30, 136, 229, 0.1)',
+    ))
+    
+    # Add zero line
+    fig_diesel.add_hline(y=0, line_dash="dash", line_color="#ffc107", 
+                         annotation_text="Punto de Equilibrio", 
+                         annotation_position="top right")
+    
+    # Mark current price
+    fig_diesel.add_vline(x=current_diesel_price, line_dash="dot", line_color="#28a745",
+                         annotation_text=f"Precio Actual: {current_diesel_price:.2f}",
+                         annotation_position="top")
+    
+    fig_diesel.update_layout(
+        title="Utilidad vs Precio del Diesel",
+        xaxis_title="Precio Diesel (Bs/L)",
+        yaxis_title="Utilidad Mensual (Bs)",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#ccc'),
+        xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+        yaxis=dict(gridcolor='rgba(255,255,255,0.1)', tickformat=','),
+        height=400,
+        showlegend=False,
+    )
+    
+    st.plotly_chart(fig_diesel, use_container_width=True)
+
+with diesel_table_col:
+    # Format display table
+    display_diesel_df = df_diesel_sensitivity.copy()
+    display_diesel_df["Costo Diesel/Mes (Bs)"] = display_diesel_df["Costo Diesel/Mes (Bs)"].apply(lambda x: f"{x:,.0f}")
+    display_diesel_df["Utilidad Mensual (Bs)"] = display_diesel_df["Utilidad Mensual (Bs)"].apply(lambda x: f"{x:,.0f}")
+    display_diesel_df["Utilidad Anual (Bs)"] = display_diesel_df["Utilidad Anual (Bs)"].apply(lambda x: f"{x:,.0f}")
+    display_diesel_df[""] = display_diesel_df["Es Actual"].apply(lambda x: "◀ ACTUAL" if x else "")
+    
+    show_diesel_cols = ["Precio Diesel (Bs/L)", "Cambio (%)", "Utilidad Mensual (Bs)", "Rentable", ""]
+    st.dataframe(display_diesel_df[show_diesel_cols], use_container_width=True, hide_index=True, height=380)
+
+# Recommendations based on diesel impact
+st.markdown("### 💡 Recomendaciones para Mitigar el Aumento del Diesel")
+
+if profit_reduction > 0:
+    # Calculate required tariff increase to maintain profit
+    revenue_needed = results["monthly_revenue"] + diesel_increase_monthly
+    m3_total_month = m3_per_trip * trips_per_month
+    new_price_per_m3_needed = revenue_needed / m3_total_month if m3_total_month > 0 else 0
+    tariff_increase_needed = new_price_per_m3_needed - price_per_m3
+    tariff_increase_pct = (tariff_increase_needed / price_per_m3 * 100) if price_per_m3 > 0 else 0
+    
+    st.markdown(f"""
+    <div style="padding: 15px; background: rgba(30, 136, 229, 0.1); border-radius: 10px; border-left: 4px solid #1e88e5;">
+        <h4 style="margin: 0 0 10px 0; color: #1e88e5;">Para mantener tu utilidad actual con diesel a {new_diesel_price:.2f} Bs/L:</h4>
+        <ul style="color: #ccc; margin: 0; padding-left: 20px;">
+            <li><strong>Opción 1 - Subir tarifa:</strong> Aumentar de {price_per_m3:.0f} a <strong>{new_price_per_m3_needed:.0f} Bs/m³</strong> (+{tariff_increase_pct:.1f}%)</li>
+            <li><strong>Opción 2 - Más viajes:</strong> Compensar con más viajes al mes (análisis de sensibilidad arriba)</li>
+            <li><strong>Opción 3 - Reducir otros costos:</strong> Renegociar mantenimiento, optimizar rutas, etc.</li>
+            <li><strong>Opción 4 - Buscar clientes con mejor tarifa:</strong> Ver sección "Mejor Cliente" arriba</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown(f"""
+    <div style="padding: 15px; background: rgba(255, 193, 7, 0.1); border-radius: 10px; border-left: 4px solid #ffc107; margin-top: 15px;">
+        <p style="margin: 0; color: #ccc;">
+            <strong>⚠️ Impacto financiero del aumento de diesel:</strong><br>
+            • Pérdida mensual: <strong>{profit_reduction:,.0f} Bs/mes</strong><br>
+            • Pérdida anual: <strong>{profit_reduction * 12:,.0f} Bs/año</strong><br>
+            • Para compensar, necesitas <strong>+{tariff_increase_needed:.0f} Bs/m³</strong> en tu tarifa
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("---")
 st.subheader("📉 Tabla de amortización del crédito")
 
 if financed_amount > 0 and years > 0:
