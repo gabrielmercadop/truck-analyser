@@ -94,6 +94,7 @@ class PlantEquipmentConfig:
     """Configuration for plant equipment powered by generator (no direct diesel)."""
     name: str
     enabled: bool = True
+    quantity: int = 1
     operation_hours_day: float = 8.0
     maintenance_cost_ph: float = 0.0  # Cost per hour
     wear_cost_ph: float = 0.0  # Wear/parts cost per hour
@@ -102,13 +103,13 @@ class PlantEquipmentConfig:
     def daily_maintenance_cost(self) -> float:
         if not self.enabled:
             return 0.0
-        return self.maintenance_cost_ph * self.operation_hours_day
+        return self.maintenance_cost_ph * self.operation_hours_day * self.quantity
     
     @property
     def daily_wear_cost(self) -> float:
         if not self.enabled:
             return 0.0
-        return self.wear_cost_ph * self.operation_hours_day
+        return self.wear_cost_ph * self.operation_hours_day * self.quantity
 
 
 @dataclass
@@ -145,39 +146,40 @@ class MobileEquipmentConfig:
 class GeneratorConfig:
     """Configuration for the generator that powers plant equipment."""
     enabled: bool = True
+    quantity: int = 1
     diesel_consumption_lph: float = 80.0  # Liters per hour
     operation_hours_day: float = 8.0
     maintenance_cost_ph: float = 30.0
     wear_cost_ph: float = 20.0
-    
+
     @property
     def daily_diesel_liters(self) -> float:
         if not self.enabled:
             return 0.0
-        return self.diesel_consumption_lph * self.operation_hours_day
-    
+        return self.diesel_consumption_lph * self.operation_hours_day * self.quantity
+
     @property
     def daily_maintenance_cost(self) -> float:
         if not self.enabled:
             return 0.0
-        return self.maintenance_cost_ph * self.operation_hours_day
-    
+        return self.maintenance_cost_ph * self.operation_hours_day * self.quantity
+
     @property
     def daily_wear_cost(self) -> float:
         if not self.enabled:
             return 0.0
-        return self.wear_cost_ph * self.operation_hours_day
+        return self.wear_cost_ph * self.operation_hours_day * self.quantity
 
 
 @dataclass
 class PersonnelConfig:
     """Configuration for personnel costs."""
-    operators_count: int = 2
-    operators_daily_wage: float = 150.0
-    helpers_count: int = 4
-    helpers_daily_wage: float = 100.0
+    operators_count: int = 4
+    operators_daily_wage: float = 200.0
+    helpers_count: int = 6
+    helpers_daily_wage: float = 130.0
     supervisors_count: int = 1
-    supervisors_daily_wage: float = 250.0
+    supervisors_daily_wage: float = 300.0
     social_benefits_pct: float = 30.0  # Percentage over base salaries
     
     @property
@@ -213,7 +215,7 @@ class LogisticsConfig:
 class ProjectConfig:
     """Configuration for the project."""
     name: str = "Proyecto Carretero"
-    duration_days: int = 180
+    duration_days: int = 143
     daily_production: float = 500.0
     material_type: str = "Grava"
     unit: str = "m³"  # m³ or tonelada
@@ -226,9 +228,9 @@ class ProjectConfig:
 @dataclass
 class EconomicConfig:
     """Economic variables."""
-    diesel_price: float = 3.72  # Bs/L
-    selling_price_per_unit: float = 85.0  # Bs per m³ or ton
-    target_margin_pct: float = 25.0
+    diesel_price: float = 9.8  # Bs/L
+    selling_price_per_unit: float = 50  # Bs per m³ or ton
+    target_margin_pct: float = 40
 
 
 # -----------------------
@@ -241,22 +243,23 @@ def get_default_plant_equipment() -> dict[str, PlantEquipmentConfig]:
             name="Trituradora Primaria (Mandíbulas)",
             enabled=True,
             operation_hours_day=8.0,
-            maintenance_cost_ph=25.0,
-            wear_cost_ph=35.0,
+            maintenance_cost_ph=30.0,
+            wear_cost_ph=60.0,
         ),
         "secondary_crusher": PlantEquipmentConfig(
             name="Trituradora Secundaria (Cono)",
             enabled=True,
             operation_hours_day=8.0,
-            maintenance_cost_ph=20.0,
-            wear_cost_ph=30.0,
+            maintenance_cost_ph=30.0,
+            wear_cost_ph=55.0,
         ),
         "screens": PlantEquipmentConfig(
             name="Cribas/Zarandas",
             enabled=True,
+            quantity=2,
             operation_hours_day=8.0,
-            maintenance_cost_ph=10.0,
-            wear_cost_ph=15.0,
+            maintenance_cost_ph=12.0,
+            wear_cost_ph=20.0,
         ),
         "feeders": PlantEquipmentConfig(
             name="Alimentadores",
@@ -269,8 +272,22 @@ def get_default_plant_equipment() -> dict[str, PlantEquipmentConfig]:
             name="Bandas Transportadoras",
             enabled=True,
             operation_hours_day=8.0,
-            maintenance_cost_ph=8.0,
-            wear_cost_ph=12.0,
+            maintenance_cost_ph=10.0,
+            wear_cost_ph=18.0,
+        ),
+        "tertiary_crusher_hsi": PlantEquipmentConfig(
+            name="Trituradora Terciaria Horizontal (Impacto)",
+            enabled=True,
+            operation_hours_day=8.0,
+            maintenance_cost_ph=25.0,
+            wear_cost_ph=70.0,
+        ),
+        "screw_washer": PlantEquipmentConfig(
+            name="Lavadora de Tornillo (Screw Washer)",
+            enabled=True,
+            operation_hours_day=8.0,
+            maintenance_cost_ph=12.0,
+            wear_cost_ph=18.0,
         ),
     }
 
@@ -281,11 +298,11 @@ def get_default_mobile_equipment() -> dict[str, MobileEquipmentConfig]:
         "loader": MobileEquipmentConfig(
             name="Cargador Frontal",
             enabled=True,
-            quantity=1,
+            quantity=2,
             diesel_consumption_lph=25.0,
             operation_hours_day=6.0,
-            maintenance_cost_ph=15.0,
-            wear_cost_ph=20.0,
+            maintenance_cost_ph=20.0,
+            wear_cost_ph=30.0,
         ),
         "excavator": MobileEquipmentConfig(
             name="Excavadora",
@@ -293,8 +310,8 @@ def get_default_mobile_equipment() -> dict[str, MobileEquipmentConfig]:
             quantity=1,
             diesel_consumption_lph=30.0,
             operation_hours_day=8.0,
-            maintenance_cost_ph=20.0,
-            wear_cost_ph=25.0,
+            maintenance_cost_ph=25.0,
+            wear_cost_ph=35.0,
         ),
         "dump_trucks": MobileEquipmentConfig(
             name="Volquetas",
@@ -312,10 +329,11 @@ def get_default_generator() -> GeneratorConfig:
     """Return default generator configuration."""
     return GeneratorConfig(
         enabled=True,
+        quantity=2,
         diesel_consumption_lph=80.0,
         operation_hours_day=8.0,
-        maintenance_cost_ph=30.0,
-        wear_cost_ph=20.0,
+        maintenance_cost_ph=40.0,
+        wear_cost_ph=35.0,
     )
 
 
@@ -333,47 +351,47 @@ def calculate_all_equipment_costs(
     total_maintenance = 0.0
     total_wear = 0.0
     equipment_details = []
-    
+
     # Generator costs (powers plant equipment)
     if generator.enabled:
         gen_diesel = generator.daily_diesel_liters
         gen_diesel_cost = gen_diesel * diesel_price
         gen_maintenance = generator.daily_maintenance_cost
         gen_wear = generator.daily_wear_cost
-        
+
         total_diesel_liters += gen_diesel
         total_maintenance += gen_maintenance
         total_wear += gen_wear
-        
+
         equipment_details.append({
             "Equipo": "Generador (Planta)",
-            "Cantidad": 1,
+            "Cantidad": generator.quantity,
             "Diésel (L/día)": gen_diesel,
             "Costo Diésel (Bs)": gen_diesel_cost,
             "Mantenimiento (Bs)": gen_maintenance,
             "Desgaste (Bs)": gen_wear,
             "Total (Bs)": gen_diesel_cost + gen_maintenance + gen_wear,
         })
-    
+
     # Plant equipment costs (no diesel, powered by generator)
     for key, eq in plant_equipment.items():
         if eq.enabled:
             maintenance = eq.daily_maintenance_cost
             wear = eq.daily_wear_cost
-            
+
             total_maintenance += maintenance
             total_wear += wear
-            
+
             equipment_details.append({
                 "Equipo": eq.name,
-                "Cantidad": 1,
+                "Cantidad": eq.quantity,
                 "Diésel (L/día)": 0.0,  # Powered by generator
                 "Costo Diésel (Bs)": 0.0,
                 "Mantenimiento (Bs)": maintenance,
                 "Desgaste (Bs)": wear,
                 "Total (Bs)": maintenance + wear,
             })
-    
+
     # Mobile equipment costs (uses diesel directly)
     for key, eq in mobile_equipment.items():
         if eq.enabled:
@@ -381,11 +399,11 @@ def calculate_all_equipment_costs(
             diesel_cost = diesel_liters * diesel_price
             maintenance = eq.daily_maintenance_cost
             wear = eq.daily_wear_cost
-            
+
             total_diesel_liters += diesel_liters
             total_maintenance += maintenance
             total_wear += wear
-            
+
             equipment_details.append({
                 "Equipo": eq.name,
                 "Cantidad": eq.quantity,
@@ -395,9 +413,9 @@ def calculate_all_equipment_costs(
                 "Desgaste (Bs)": wear,
                 "Total (Bs)": diesel_cost + maintenance + wear,
             })
-    
+
     total_diesel_cost = total_diesel_liters * diesel_price
-    
+
     return {
         "total_diesel_liters": total_diesel_liters,
         "total_diesel_cost": total_diesel_cost,
@@ -500,16 +518,41 @@ def calculate_scenario(
     mobilization_cost: float,
     selling_price: float,
 ) -> dict:
-    """Calculate a scenario with adjusted production and costs."""
+    """Calculate a scenario with adjusted production and costs.
+
+    Notes:
+    - `base_daily_costs` comes from `calculate_total_daily_cost()` and contains both an
+      aggregated `equipment` key and the component keys `diesel`, `maintenance`, `wear`.
+      If we sum *all* of those we would double-count equipment.
+    - For scenarios we scale the component costs, rebuild `equipment`, and then rebuild
+      `total` as: equipment + personnel + logistics.
+    """
+
     # Adjust production
     adjusted_production = base_production * (1 + production_adjustment)
-    
-    # Adjust costs (except mobilization which is fixed)
-    adjusted_costs = {
-        k: v * (1 + cost_adjustment) for k, v in base_daily_costs.items()
-    }
-    adjusted_costs["total"] = sum(v for k, v in adjusted_costs.items() if k != "total")
-    
+
+    # Scale the component costs (avoid double counting the aggregated 'equipment')
+    component_keys = ["diesel", "maintenance", "wear", "personnel", "logistics"]
+    adjusted_costs: dict[str, float] = {}
+
+    for k in component_keys:
+        if k in base_daily_costs:
+            adjusted_costs[k] = float(base_daily_costs[k]) * (1 + cost_adjustment)
+
+    # Rebuild equipment as the sum of its components
+    adjusted_costs["equipment"] = (
+        adjusted_costs.get("diesel", 0.0)
+        + adjusted_costs.get("maintenance", 0.0)
+        + adjusted_costs.get("wear", 0.0)
+    )
+
+    # Rebuild total daily cost (equipment + personnel + logistics)
+    adjusted_costs["total"] = (
+        adjusted_costs.get("equipment", 0.0)
+        + adjusted_costs.get("personnel", 0.0)
+        + adjusted_costs.get("logistics", 0.0)
+    )
+
     # Calculate unit cost
     unit_cost_data = calculate_unit_cost(
         adjusted_costs,
@@ -517,10 +560,10 @@ def calculate_scenario(
         project_duration,
         mobilization_cost,
     )
-    
+
     # Calculate margins
     margins = calculate_margins(unit_cost_data["cost_per_unit"], selling_price)
-    
+
     return {
         "daily_production": adjusted_production,
         "daily_cost": adjusted_costs["total"],
@@ -530,8 +573,8 @@ def calculate_scenario(
         "margin_pct": margins["margin_pct"],
         "total_project_revenue": adjusted_production * project_duration * selling_price,
         "total_project_cost": adjusted_costs["total"] * project_duration + mobilization_cost,
-        "total_project_profit": (adjusted_production * project_duration * selling_price) - 
-                                (adjusted_costs["total"] * project_duration + mobilization_cost),
+        "total_project_profit": (adjusted_production * project_duration * selling_price)
+        - (adjusted_costs["total"] * project_duration + mobilization_cost),
     }
 
 
@@ -591,7 +634,7 @@ class CrushingAnalysisPDF(FPDF):
         super().__init__()
         self.set_margins(15, 15, 15)
         self.set_auto_page_break(auto=True, margin=15)
-        self.effective_width = 180
+        self.effective_width = 143
         self.project_name = project_name
     
     def header(self):
@@ -693,6 +736,8 @@ def generate_pdf_report(
     margins: dict,
     scenarios: dict,
     sensitivity_df: pd.DataFrame,
+    materials: list[dict],
+    material_margin_df: pd.DataFrame,
 ) -> bytes:
     """Generate a comprehensive PDF report."""
     pdf = CrushingAnalysisPDF(project.name)
@@ -733,13 +778,25 @@ def generate_pdf_report(
     
     # Daily Cost Summary
     pdf.section_title("Resumen de Costos Diarios")
-    pdf.add_key_value("Diesel Total", f"{daily_costs['diesel']:,.2f} Bs")
+    pdf.add_key_value("Diésel Total", f"{daily_costs['diesel']:,.2f} Bs")
     pdf.add_key_value("Mantenimiento", f"{daily_costs['maintenance']:,.2f} Bs")
     pdf.add_key_value("Desgaste", f"{daily_costs['wear']:,.2f} Bs")
     pdf.add_key_value("Personal", f"{daily_costs['personnel']:,.2f} Bs")
-    pdf.add_key_value("Logistica", f"{daily_costs['logistics']:,.2f} Bs")
+    pdf.add_key_value("Logística", f"{daily_costs['logistics']:,.2f} Bs")
     pdf.add_key_value("TOTAL DIARIO", f"{daily_costs['total']:,.2f} Bs")
-    pdf.ln(3)
+    pdf.ln(2)
+
+    # Table: Daily cost breakdown (Bs/day)
+    headers = ["Categoría", "Costo Diario (Bs)"]
+    data = [
+        ["Diésel", f"{daily_costs['diesel']:,.2f}"],
+        ["Mantenimiento", f"{daily_costs['maintenance']:,.2f}"],
+        ["Desgaste", f"{daily_costs['wear']:,.2f}"],
+        ["Personal", f"{daily_costs['personnel']:,.2f}"],
+        ["Logística", f"{daily_costs['logistics']:,.2f}"],
+        ["TOTAL", f"{daily_costs['total']:,.2f}"],
+    ]
+    pdf.add_table(headers, data, col_widths=[70, 73])
     
     # Cost per Unit
     pdf.section_title(f"Costo por {project.unit}")
@@ -747,6 +804,23 @@ def generate_pdf_report(
     pdf.add_key_value("Movilizacion (amort.)", f"{unit_cost_data['mobilization_per_unit']:,.2f} Bs/{project.unit}")
     pdf.add_key_value("COSTO TOTAL", f"{unit_cost_data['cost_per_unit']:,.2f} Bs/{project.unit}")
     pdf.ln(3)
+
+    # Unit cost breakdown table
+    pdf.subsection_title(f"Desglose de costo por {project.unit}")
+    try:
+        b = unit_cost_data.get("breakdown", {}) or {}
+        headers = ["Componente", f"Bs/{project.unit}"]
+        data = []
+        for k, v in b.items():
+            try:
+                data.append([str(k), f"{float(v):,.2f}"])
+            except Exception:
+                data.append([str(k), str(v)])
+        # Ensure TOTAL appears as last row
+        data.append(["TOTAL", f"{unit_cost_data.get('cost_per_unit', 0):,.2f}"])
+        pdf.add_table(headers, data, col_widths=[70, 73])
+    except Exception:
+        pass
     
     # Margins
     pdf.section_title("Margenes")
@@ -764,7 +838,116 @@ def generate_pdf_report(
             f"ATENCION: El margen actual ({margins['margin_pct']:.1f}%) esta por debajo del objetivo ({economic.target_margin_pct:.1f}%)",
             "warning"
         )
+
+    # Personnel details
+    pdf.section_title("Detalle de Personal")
+    headers = ["Rol", "Cant.", "Bs/día", "Costo Día (Bs)"]
+    base_ops = personnel.operators_count * personnel.operators_daily_wage
+    base_helpers = personnel.helpers_count * personnel.helpers_daily_wage
+    base_sup = personnel.supervisors_count * personnel.supervisors_daily_wage
+    base_total = base_ops + base_helpers + base_sup
+    benefits = base_total * (personnel.social_benefits_pct / 100)
+    data = [
+        ["Operadores", personnel.operators_count, f"{personnel.operators_daily_wage:,.0f}", f"{base_ops:,.0f}"],
+        ["Ayudantes", personnel.helpers_count, f"{personnel.helpers_daily_wage:,.0f}", f"{base_helpers:,.0f}"],
+        ["Supervisores", personnel.supervisors_count, f"{personnel.supervisors_daily_wage:,.0f}", f"{base_sup:,.0f}"],
+        [f"Beneficios ({personnel.social_benefits_pct:.0f}%)", "-", "-", f"{benefits:,.0f}"],
+        ["TOTAL PERSONAL", "-", "-", f"{personnel.total_daily_cost:,.0f}"],
+    ]
+    pdf.add_table(headers, data, col_widths=[55, 18, 28, 42])
+
+    # Logistics details
+    pdf.section_title("Detalle de Logística")
+    pdf.add_key_value("Movilización (único)", f"{logistics.mobilization_cost:,.2f} Bs")
+    pdf.add_key_value("Desmovilización (único)", f"{logistics.demobilization_cost:,.2f} Bs")
+    pdf.add_key_value("Combustible Veh. Apoyo (Bs/día)", f"{logistics.support_vehicles_fuel_daily:,.2f} Bs")
+    pdf.add_key_value("Insumos varios (Bs/día)", f"{logistics.consumables_daily:,.2f} Bs")
+    pdf.add_key_value("TOTAL Logística (Bs/día)", f"{logistics.daily_cost:,.2f} Bs")
+    pdf.add_key_value("TOTAL Movilización+Desmov.", f"{logistics.total_mobilization_cost():,.2f} Bs")
+    pdf.ln(2)
+
+    # Margins per material (multi-material)
+    pdf.section_title("Margen por Material")
+    if materials and material_margin_df is not None and not material_margin_df.empty:
+        pdf.subsection_title("Resultados por material (costo unitario compartido)")
+        pdf.add_key_value(
+            f"Costo unitario usado",
+            f"{unit_cost_data['cost_per_unit']:,.2f} Bs/{project.unit}",
+        )
+        headers = [
+            "Material",
+            f"Prod/día ({project.unit})",
+            f"Precio (Bs/{project.unit})",
+            "Margen %",
+            f"Gan./{project.unit} (Bs)",
+            "Ingreso día (Bs)",
+            "Ganancia día (Bs)",
+        ]
+        data = []
+        for _, r in material_margin_df.iterrows():
+            data.append([
+                str(r.get("Material", ""))[:18],
+                f"{float(r.get('Producción diaria', 0)):,.0f}",
+                f"{float(r.get('Precio', 0)):,.2f}",
+                f"{float(r.get('Margen (%)', 0)):.1f}%",
+                f"{float(r.get('Ganancia por unidad', 0)):,.2f}",
+                f"{float(r.get('Ingreso diario', 0)):,.0f}",
+                f"{float(r.get('Ganancia diaria', 0)):,.0f}",
+            ])
+        pdf.add_table(headers, data, col_widths=[30, 22, 22, 14, 20, 17, 18])
+
+        # Warn if any material is below target or negative
+        try:
+            below_target = material_margin_df[material_margin_df["Margen (%)"] < economic.target_margin_pct]
+            negative = material_margin_df[material_margin_df["Margen (%)"] < 0]
+            if not negative.empty:
+                worst = negative.sort_values("Margen (%)").iloc[0]
+                pdf.add_highlight_box(
+                    f"ALERTA: Hay materiales con margen NEGATIVO. Peor caso: {worst['Material']} ({float(worst['Margen (%)']):.1f}%).",
+                    "danger",
+                )
+            elif not below_target.empty:
+                worst = below_target.sort_values("Margen (%)").iloc[0]
+                pdf.add_highlight_box(
+                    f"ATENCIÓN: Hay materiales por debajo del margen objetivo ({economic.target_margin_pct:.1f}%). Peor caso: {worst['Material']} ({float(worst['Margen (%)']):.1f}%).",
+                    "warning",
+                )
+            else:
+                pdf.add_highlight_box(
+                    "✅ Todos los materiales cumplen o superan el margen objetivo.",
+                    "success",
+                )
+        except Exception:
+            pass
+        # Project totals per material (compact)
+        try:
+            pdf.subsection_title("Totales por material (proyecto)")
+            headers2 = ["Material", "Ingreso Proy. (Bs)", "Ganancia Proy. (Bs)"]
+            data2 = []
+            for _, r in material_margin_df.iterrows():
+                data2.append([
+                    str(r.get("Material", ""))[:22],
+                    f"{float(r.get('Ingreso proyecto', 0)):,.0f}",
+                    f"{float(r.get('Ganancia proyecto', 0)):,.0f}",
+                ])
+            pdf.add_table(headers2, data2, col_widths=[55, 44, 44])
+        except Exception:
+            pass
+    else:
+        pdf.add_highlight_box("No hay datos suficientes para calcular margen por material.", "warning")
     
+    # Project totals
+    pdf.section_title("Totales del Proyecto")
+    total_revenue = project.total_production * economic.selling_price_per_unit
+    total_cost = (daily_costs["total"] * project.duration_days) + logistics.total_mobilization_cost()
+    total_profit = total_revenue - total_cost
+    pdf.add_key_value("Ingresos Totales", f"{total_revenue:,.0f} Bs")
+    pdf.add_key_value("Costos Totales", f"{total_cost:,.0f} Bs")
+    pdf.add_key_value("Ganancia Total", f"{total_profit:,.0f} Bs")
+    if total_revenue > 0:
+        pdf.add_key_value("Margen del Proyecto", f"{(total_profit/total_revenue)*100:.1f}%")
+    pdf.ln(2)
+
     # Scenarios - New Page
     pdf.add_page()
     pdf.section_title("Analisis de Escenarios")
@@ -797,6 +980,199 @@ def generate_pdf_report(
     return bytes(pdf.output())
 
 
+# -----------------------
+# BUSINESS PROPOSAL PDF
+# -----------------------
+class CrushingBusinessProposalPDF(FPDF):
+    """Client-facing business proposal PDF."""
+
+    def __init__(self, project_name: str = "Proyecto"):
+        super().__init__()
+        self.set_margins(15, 15, 15)
+        self.set_auto_page_break(auto=True, margin=15)
+        self.effective_width = 183  # A4 width minus margins for portrait
+        self.project_name = project_name
+
+    def header(self):
+        self.set_font("Helvetica", "B", 14)
+        self.cell(0, 8, "PROPUESTA COMERCIAL", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.set_font("Helvetica", "B", 12)
+        self.cell(0, 7, "SERVICIO DE TRITURACIÓN Y PRODUCCIÓN DE ÁRIDOS", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.set_font("Helvetica", "", 10)
+        self.cell(0, 6, self.project_name, align="C", new_x="LMARGIN", new_y="NEXT")
+        self.set_font("Helvetica", "", 9)
+        self.cell(0, 5, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.ln(4)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.cell(0, 10, f"Página {self.page_no()}/{{nb}}", align="C")
+
+    def section_title(self, title: str):
+        # Ensure there is enough vertical space for a new section header
+        # A4 height is 297mm; with 15mm bottom margin, avoid writing past ~282mm
+        if self.get_y() > 270:
+            self.add_page()
+
+        self.set_x(self.l_margin)
+        self.set_font("Helvetica", "B", 11)
+        self.set_fill_color(52, 73, 94)
+        self.set_text_color(255, 255, 255)
+        self.cell(self.effective_width, 7, f"  {title}", fill=True, new_x="LMARGIN", new_y="NEXT")
+        self.set_text_color(0, 0, 0)
+        self.ln(2)
+
+    def add_paragraph(self, text: str):
+        self.set_x(self.l_margin)
+        self.set_font("Helvetica", "", 9)
+        self.multi_cell(self.effective_width, 5, text)
+        self.ln(1)
+
+    def add_key_value(self, key: str, value: str):
+        self.set_x(self.l_margin)
+        key_width = 70
+        value_width = self.effective_width - key_width
+        self.set_font("Helvetica", "B", 9)
+        self.cell(key_width, 6, key + ":", align="L")
+        self.set_font("Helvetica", "", 9)
+        self.cell(value_width, 6, value, align="L", new_x="LMARGIN", new_y="NEXT")
+
+    def add_table(self, headers: list, data: list, col_widths: list | None = None):
+        if col_widths is None:
+            col_widths = [self.effective_width // len(headers)] * len(headers)
+            col_widths[-1] = self.effective_width - sum(col_widths[:-1])
+
+        total_width = sum(col_widths)
+        if total_width > self.effective_width:
+            scale = self.effective_width / total_width
+            col_widths = [int(w * scale) for w in col_widths]
+
+        self.set_x(self.l_margin)
+        self.set_font("Helvetica", "B", 8)
+        self.set_fill_color(236, 240, 241)
+        for i, header in enumerate(headers):
+            self.cell(col_widths[i], 7, header, border=1, fill=True, align="C")
+        self.ln()
+
+        self.set_font("Helvetica", "", 8)
+        for row in data:
+            self.set_x(self.l_margin)
+            for i, cell in enumerate(row):
+                self.cell(col_widths[i], 6, str(cell), border=1, align="C")
+            self.ln()
+        self.ln(2)
+
+
+def generate_business_proposal_pdf(
+    project: ProjectConfig,
+    generator: GeneratorConfig,
+    plant_equipment: dict[str, PlantEquipmentConfig],
+    mobile_equipment: dict[str, MobileEquipmentConfig],
+    proposal_materials: list[dict],
+    company_name: str,
+    company_tagline: str,
+    client_name: str = "",
+    payment_terms: str = "",
+    validity_days: int = 7,
+    notes: str = "",
+) -> bytes:
+    """Generate a client-facing proposal PDF.
+
+    proposal_materials items must include:
+      - name
+      - total_quantity
+      - unit_price
+    """
+
+    pdf = CrushingBusinessProposalPDF(project.name)
+    pdf.alias_nb_pages()
+    pdf.add_page()
+
+    # Intro
+    pdf.section_title("Datos de la Propuesta")
+    pdf.add_key_value("Empresa", company_name)
+    if company_tagline.strip():
+        pdf.add_key_value("Servicio", company_tagline)
+    if client_name.strip():
+        pdf.add_key_value("Cliente", client_name.strip())
+    pdf.add_key_value("Proyecto", project.name)
+    pdf.add_key_value("Unidad", project.unit)
+    pdf.add_key_value("Validez", f"{int(validity_days)} días")
+    pdf.ln(2)
+
+    # Materials
+    pdf.section_title("Materiales y Precios")
+    headers = ["Material", f"Cantidad ({project.unit})", f"Precio (Bs/{project.unit})", "Total (Bs)"]
+    rows = []
+    grand_total = 0.0
+    for m in proposal_materials:
+        name = str(m.get("name", "")).strip() or "Material"
+        qty = float(m.get("total_quantity", 0.0) or 0.0)
+        price = float(m.get("unit_price", 0.0) or 0.0)
+        line_total = qty * price
+        grand_total += line_total
+        rows.append([
+            name[:30],
+            f"{qty:,.0f}",
+            f"{price:,.2f}",
+            f"{line_total:,.0f}",
+        ])
+
+    pdf.add_table(headers, rows, col_widths=[70, 40, 40, 33])
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_x(pdf.l_margin)
+    pdf.cell(pdf.effective_width, 7, f"TOTAL PROPUESTA: {grand_total:,.0f} Bs", border=1, align="C")
+    pdf.ln(8)
+
+    # Equipment list
+    pdf.section_title("Equipos a Desplegar en el Proyecto")
+
+    eq_headers = ["Equipo", "Cantidad", "Notas"]
+    eq_rows = []
+
+    if generator.enabled and generator.quantity > 0:
+        eq_rows.append(["Generador (alimenta la planta)", str(int(generator.quantity)), "Diésel según horas de operación"]) 
+
+    for _, eq in plant_equipment.items():
+        if getattr(eq, "enabled", False) and int(getattr(eq, "quantity", 0) or 0) > 0:
+            eq_rows.append([str(eq.name)[:45], str(int(eq.quantity)), "Equipo de planta"]) 
+
+    for _, eq in mobile_equipment.items():
+        if getattr(eq, "enabled", False) and int(getattr(eq, "quantity", 0) or 0) > 0:
+            eq_rows.append([str(eq.name)[:45], str(int(eq.quantity)), "Equipo móvil"]) 
+
+    if not eq_rows:
+        eq_rows.append(["(Sin equipos seleccionados)", "-", ""]) 
+
+    pdf.add_table(eq_headers, eq_rows, col_widths=[110, 25, 48])
+
+    # Terms
+    pdf.section_title("Condiciones")
+    if payment_terms.strip():
+        pdf.add_paragraph(f"Condiciones de pago: {payment_terms.strip()}")
+    else:
+        pdf.add_paragraph("Condiciones de pago: A convenir.")
+
+    pdf.add_paragraph(
+        "Alcance del servicio: movilización de planta móvil de trituración, instalación, operación, "
+        "producción de materiales según especificación del proyecto y desmovilización al finalizar." 
+    )
+
+    if notes.strip():
+        pdf.add_paragraph(f"Notas: {notes.strip()}")
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.multi_cell(
+        pdf.effective_width,
+        5,
+        "Atentamente,\n\n______________________________\nRepresentante\n" + company_name,
+    )
+
+    return bytes(pdf.output())
+
+
 def generate_excel_report(
     project: ProjectConfig,
     personnel: PersonnelConfig,
@@ -808,6 +1184,8 @@ def generate_excel_report(
     margins: dict,
     scenarios: dict,
     sensitivity_df: pd.DataFrame,
+    materials: list[dict],
+    material_margin_df: pd.DataFrame,
 ) -> bytes:
     """Generate Excel report with multiple sheets."""
     output = io.BytesIO()
@@ -847,6 +1225,9 @@ def generate_excel_report(
             ],
         }
         pd.DataFrame(summary_data).to_excel(writer, sheet_name="Resumen", index=False)
+        # Sheet: Materiales (margen por material)
+        if materials and material_margin_df is not None and not material_margin_df.empty:
+            material_margin_df.to_excel(writer, sheet_name="Materiales", index=False)
         
         # Sheet 2: Costos Detallados por Equipo
         if equipment_costs["details"]:
@@ -949,46 +1330,249 @@ def main():
         # Project Data
         with st.expander("📋 Datos del Proyecto", expanded=True):
             project_name = st.text_input("Nombre del Proyecto", value="Proyecto Carretero ABC")
-            duration_days = st.number_input("Duración (días)", min_value=1, value=180, step=1)
-            daily_production = st.number_input("Producción Diaria", min_value=1.0, value=500.0, step=10.0)
+            duration_days = st.number_input("Duración (días)", min_value=1, value=143, step=1)
+            # Remove single-material input for daily_production
+            # daily_production = st.number_input("Producción Diaria", min_value=1.0, value=500.0, step=10.0)
             unit = st.selectbox("Unidad de Medida", ["m³", "tonelada"])
-            material_type = st.selectbox(
-                "Tipo de Material",
-                ["Grava", "Capa Base", "Basalto", "Granito", "Arena", "Otro"]
+
+            st.divider()
+            st.subheader("🧱 Materiales (múltiples)")
+            st.caption(
+                "Ingresa los materiales que producirás en el día (capacidad en un día perfecto). "
+                "Luego aplica un factor de disponibilidad para simular paradas por mantenimiento y problemas."
             )
+
+            availability_pct = st.slider(
+                "Disponibilidad operativa del día (%)",
+                min_value=50,
+                max_value=100,
+                value=85,
+                step=1,
+                help=(
+                    "100% = día perfecto sin paradas. Valores menores simulan tiempo perdido por mantenimiento, "
+                    "clima, atascos, falta de volquetas, etc. La producción efectiva se reduce, pero los costos diarios "
+                    "se mantienen (en general), por lo que sube el costo por unidad."
+                ),
+            )
+            availability_factor = availability_pct / 100.0
+            st.caption(
+                f"Producción efectiva = Producción ideal × {availability_pct}% (disponibilidad)."
+            )
+
+            n_materials = st.number_input(
+                "Cantidad de materiales",
+                min_value=1,
+                max_value=10,
+                value=5,
+                step=1,
+                key="n_materials",
+            )
+
+            materials = []
+
+            # Compact header row (prevents long labels from wrapping in the sidebar)
+            h1, h2, h3 = st.columns([2.2, 1, 1])
+            with h1:
+                st.markdown("**Nombre**")
+            with h2:
+                st.markdown(f"**Prod ({unit}/día)**")
+            with h3:
+                st.markdown(f"**Precio (Bs/{unit})**")
+
+            default_materials = [
+                {"name": "Sub base", "prod": 500.0, "price": 45.0},
+                {"name": "Capa base 1", "prod": 350.0, "price": 65.0},
+                {"name": "Arena lavada", "prod": 150.0, "price": 90.0},
+                {"name": "Grava chancada 3/8", "prod": 150.0, "price": 90.0},
+                {"name": "Chip 3/8 - 1/2 - 3/4 CARPETA", "prod": 300.0, "price": 130.0},
+            ]
+
+            for i in range(int(n_materials)):
+                with st.expander(f"Material {i+1}", expanded=(i < 2)):
+                    c1, c2, c3 = st.columns([2.2, 1, 1])
+                    defaults = default_materials[i] if i < len(default_materials) else {
+                        "name": f"Material {i+1}",
+                        "prod": 0.0,
+                        "price": 0.0,
+                    }
+                    with c1:
+                        m_name = st.text_input(
+                            "Nombre",
+                            value=defaults["name"],
+                            key=f"mat_{i}_name",
+                            label_visibility="collapsed",
+                            placeholder="Ej: Grava 3/4",
+                        )
+                    with c2:
+                        m_prod = st.number_input(
+                            "Producción",
+                            min_value=0.0,
+                            value=defaults["prod"],
+                            step=10.0,
+                            key=f"mat_{i}_prod",
+                            label_visibility="collapsed",
+                        )
+                    with c3:
+                        m_price = st.number_input(
+                            "Precio",
+                            min_value=0.0,
+                            value=defaults["price"],
+                            step=1.0,
+                            format="%.2f",
+                            key=f"mat_{i}_price",
+                            label_visibility="collapsed",
+                        )
+
+                    materials.append({
+                        "name": (m_name or f"Material {i+1}").strip(),
+                        "daily_production": float(m_prod),
+                        "selling_price": float(m_price),
+                    })
+            # Filter invalid rows
+            materials = [m for m in materials if m["daily_production"] > 0 and m["selling_price"] > 0 and m["name"]]
+
+            # Derive a project material label from the entered materials
+            material_names = [m["name"] for m in materials]
+            material_type = ", ".join(material_names)
+            if len(material_type) > 80:
+                material_type = material_type[:77] + "..."
+
+            if not materials:
+                st.error("Agrega al menos 1 material con producción > 0 y precio > 0.")
+                st.stop()
+
+            total_daily_production_ideal = sum(m["daily_production"] for m in materials)
+
+            # Apply availability factor: effective production is lower than the "perfect day" inputs
+            materials_effective = []
+            for m in materials:
+                materials_effective.append({
+                    "name": m["name"],
+                    "daily_production": float(m["daily_production"]) * availability_factor,
+                    "selling_price": float(m["selling_price"]),
+                })
+
+            total_daily_production = sum(m["daily_production"] for m in materials_effective)
+
+            weighted_avg_price = (
+                sum(m["daily_production"] * m["selling_price"] for m in materials_effective) / total_daily_production
+                if total_daily_production > 0
+                else 0.0
+            )
+
+            st.info(
+                f"**Producción ideal:** {total_daily_production_ideal:,.0f} {unit}/día  |  "
+                f"**Disponibilidad:** {availability_pct}%  |  "
+                f"**Producción efectiva:** {total_daily_production:,.0f} {unit}/día  |  "
+                f"**Precio promedio ponderado:** {weighted_avg_price:,.2f} Bs/{unit}"
+            )
+
+            st.dataframe(
+                pd.DataFrame(materials_effective).rename(columns={
+                    "name": "Material",
+                    "daily_production": f"Producción ({unit}/día)",
+                    "selling_price": f"Precio (Bs/{unit})",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            # Backwards-compatible variables for the rest of the app (for now)
+            daily_production = total_daily_production
+            selling_price = weighted_avg_price
+            materials_for_calc = materials_effective
+
+            # -----------------------
+            # Proposal Inputs (client-facing)
+            # -----------------------
+            st.divider()
+            st.subheader("🧾 Propuesta Comercial")
+            st.caption(
+                "Define la **cantidad total** por material para el proyecto y el **precio unitario** que ofrecerás al cliente. "
+                "Estos valores se usarán para generar un PDF de propuesta comercial."
+            )
+
+            client_name = st.text_input("Cliente (opcional)", value="", key="proposal_client")
+            validity_days = st.number_input("Validez de la oferta (días)", min_value=1, value=7, step=1, key="proposal_validity")
+            payment_terms = st.text_input("Condiciones de pago (opcional)", value="", key="proposal_payment_terms")
+            proposal_notes = st.text_area("Notas / Alcance adicional (opcional)", value="", height=90, key="proposal_notes")
+
+            st.markdown("**Materiales para la propuesta**")
+            proposal_materials = []
+            for i, m in enumerate(materials):
+                # Use the original (ideal) materials list so the user can define contractual quantities
+                m_name = str(m.get("name", "")).strip() or f"Material {i+1}"
+                # Default to effective daily production * duration (a reasonable starting point)
+                default_qty = float(m.get("daily_production", 0.0)) * float(duration_days) * availability_factor
+                default_price = float(m.get("selling_price", 0.0))
+
+                with st.expander(f"Propuesta: {m_name}", expanded=(i < 2)):
+                    pc1, pc2 = st.columns([1.2, 1])
+                    with pc1:
+                        total_qty = st.number_input(
+                            f"Cantidad total ({unit})",
+                            min_value=0.0,
+                            value=max(0.0, default_qty),
+                            step=100.0,
+                            key=f"proposal_qty_{i}",
+                        )
+                    with pc2:
+                        unit_price = st.number_input(
+                            f"Precio unitario (Bs/{unit})",
+                            min_value=0.0,
+                            value=max(0.0, default_price),
+                            step=1.0,
+                            format="%.2f",
+                            key=f"proposal_price_{i}",
+                        )
+
+                    proposal_materials.append({
+                        "name": m_name,
+                        "total_quantity": float(total_qty),
+                        "unit_price": float(unit_price),
+                    })
+
+            # Remove empty rows
+            proposal_materials = [pm for pm in proposal_materials if pm["total_quantity"] > 0 and pm["unit_price"] > 0]
+            if proposal_materials:
+                proposal_total = sum(pm["total_quantity"] * pm["unit_price"] for pm in proposal_materials)
+                st.info(f"Total estimado propuesta: **{proposal_total:,.0f} Bs**")
+            else:
+                st.warning("Agrega al menos 1 material con cantidad total > 0 y precio unitario > 0 para generar la propuesta.")
         
         # Economic Variables
         with st.expander("💰 Variables Económicas", expanded=True):
             diesel_price = st.number_input(
                 "Precio del Diésel (Bs/L)",
                 min_value=0.01,
-                value=3.72,
+                value=9.8,
                 step=0.01,
                 format="%.2f"
             )
-            selling_price = st.number_input(
-                f"Precio de Venta (Bs/{unit})",
+            default_selling_price = st.number_input(
+                f"Precio de Venta (referencia) (Bs/{unit})",
                 min_value=0.01,
-                value=85.0,
+                value=50.0,
                 step=1.0,
                 format="%.2f"
             )
+            st.caption("Nota: el precio real usado en los cálculos viene del promedio ponderado de los materiales.")
             target_margin = st.number_input(
                 "Margen Objetivo (%)",
                 min_value=0.0,
                 max_value=100.0,
-                value=25.0,
+                value=40.0,
                 step=1.0
             )
         
         # Personnel
         with st.expander("👷 Personal", expanded=False):
-            operators_count = st.number_input("Operadores (cantidad)", min_value=0, value=2, step=1)
-            operators_wage = st.number_input("Salario Operador (Bs/día)", min_value=0.0, value=150.0, step=10.0)
-            helpers_count = st.number_input("Ayudantes (cantidad)", min_value=0, value=4, step=1)
-            helpers_wage = st.number_input("Salario Ayudante (Bs/día)", min_value=0.0, value=100.0, step=10.0)
+            operators_count = st.number_input("Operadores (cantidad)", min_value=0, value=4, step=1)
+            operators_wage = st.number_input("Salario Operador (Bs/día)", min_value=0.0, value=200.0, step=10.0)
+            helpers_count = st.number_input("Ayudantes (cantidad)", min_value=0, value=6, step=1)
+            helpers_wage = st.number_input("Salario Ayudante (Bs/día)", min_value=0.0, value=130.0, step=10.0)
             supervisors_count = st.number_input("Supervisores (cantidad)", min_value=0, value=1, step=1)
-            supervisors_wage = st.number_input("Salario Supervisor (Bs/día)", min_value=0.0, value=250.0, step=10.0)
+            supervisors_wage = st.number_input("Salario Supervisor (Bs/día)", min_value=0.0, value=300.0, step=10.0)
             social_benefits = st.number_input("Beneficios Sociales (%)", min_value=0.0, value=30.0, step=5.0)
         
         # Logistics
@@ -1024,10 +1608,18 @@ def main():
     
     with st.expander("**Configuración del Generador**", expanded=True):
         gen_enabled = st.checkbox("Generador Habilitado", value=True, key="gen_enabled")
-        
+
         if gen_enabled:
-            gc1, gc2, gc3, gc4 = st.columns(4)
+            gc1, gc2, gc3, gc4, gc5 = st.columns(5)
             with gc1:
+                gen_qty = st.number_input(
+                    "Cantidad de Generadores",
+                    min_value=1,
+                    value=default_gen.quantity,
+                    step=1,
+                    key="gen_qty"
+                )
+            with gc2:
                 gen_diesel = st.number_input(
                     "Consumo Diésel (L/h)",
                     min_value=0.0,
@@ -1035,7 +1627,7 @@ def main():
                     step=5.0,
                     key="gen_diesel"
                 )
-            with gc2:
+            with gc3:
                 gen_hours = st.number_input(
                     "Horas Operación/día",
                     min_value=0.0,
@@ -1044,7 +1636,7 @@ def main():
                     step=0.5,
                     key="gen_hours"
                 )
-            with gc3:
+            with gc4:
                 gen_maint = st.number_input(
                     "Mantenimiento (Bs/h)",
                     min_value=0.0,
@@ -1052,7 +1644,7 @@ def main():
                     step=5.0,
                     key="gen_maint"
                 )
-            with gc4:
+            with gc5:
                 gen_wear = st.number_input(
                     "Desgaste (Bs/h)",
                     min_value=0.0,
@@ -1061,13 +1653,15 @@ def main():
                     key="gen_wear"
                 )
         else:
+            gen_qty = 0
             gen_diesel = 0.0
             gen_hours = 0.0
             gen_maint = 0.0
             gen_wear = 0.0
-    
+
     generator = GeneratorConfig(
         enabled=gen_enabled,
+        quantity=gen_qty if gen_enabled else 0,
         diesel_consumption_lph=gen_diesel,
         operation_hours_day=gen_hours,
         maintenance_cost_ph=gen_maint,
@@ -1090,8 +1684,15 @@ def main():
                 enabled = st.checkbox("Habilitado", value=True, key=f"plant_{key}_enabled")
                 
                 if enabled:
-                    c1, c2, c3 = st.columns(3)
+                    c1, c2, c3, c4 = st.columns(4)
                     with c1:
+                        quantity = st.number_input(
+                            "Cantidad",
+                            min_value=1,
+                            value=default_eq.quantity,
+                            step=1,
+                            key=f"plant_{key}_qty"
+                        )
                         hours = st.number_input(
                             "Horas Operación/día",
                             min_value=0.0,
@@ -1116,7 +1717,9 @@ def main():
                             step=1.0,
                             key=f"plant_{key}_wear"
                         )
+                    # c4 is unused
                 else:
+                    quantity = 0
                     hours = 0.0
                     maintenance = 0.0
                     wear = 0.0
@@ -1124,6 +1727,7 @@ def main():
                 plant_equipment[key] = PlantEquipmentConfig(
                     name=default_eq.name,
                     enabled=enabled,
+                    quantity=quantity if enabled else 0,
                     operation_hours_day=hours,
                     maintenance_cost_ph=maintenance,
                     wear_cost_ph=wear,
@@ -1258,6 +1862,38 @@ def main():
         logistics.total_mobilization_cost(),
     )
     margins = calculate_margins(unit_cost_data["cost_per_unit"], selling_price)
+
+    # -----------------------
+    # Per-material margins (multi-material)
+    # Note: cost per unit is shared across materials because costs are shared;
+    # the margin differs by each material's selling price.
+    cost_per_unit_shared = float(unit_cost_data.get("cost_per_unit", 0.0))
+    mat_rows = []
+    for m in materials_for_calc:
+        m_name = str(m.get("name", "")).strip() or "Material"
+        m_prod = float(m.get("daily_production", 0.0))
+        m_price = float(m.get("selling_price", 0.0))
+        if m_prod <= 0 or m_price <= 0:
+            continue
+        m_profit_unit = m_price - cost_per_unit_shared
+        m_margin_pct = (m_profit_unit / m_price) * 100 if m_price > 0 else 0.0
+        mat_rows.append({
+            "Material": m_name,
+            "Producción diaria": m_prod,
+            "Precio": m_price,
+            f"Costo por {unit}": cost_per_unit_shared,
+            "Ganancia por unidad": m_profit_unit,
+            "Margen (%)": m_margin_pct,
+            "Ingreso diario": m_price * m_prod,
+            "Ganancia diaria": m_profit_unit * m_prod,
+            "Ingreso proyecto": (m_price * m_prod) * duration_days,
+            "Ganancia proyecto": (m_profit_unit * m_prod) * duration_days,
+        })
+
+    material_margin_df = pd.DataFrame(mat_rows)
+    if not material_margin_df.empty:
+        # Order by worst margin first to surface problems
+        material_margin_df = material_margin_df.sort_values("Margen (%)").reset_index(drop=True)
     
     # Display Results in Tabs
     tab1, tab2, tab3, tab4 = st.tabs([
@@ -1295,9 +1931,48 @@ def main():
                 f"Ganancia por {unit}",
                 f"{margins['gross_profit']:,.2f} Bs"
             )
-        
+
+        # --- Per-material margin reporting ---
+        st.subheader("🧱 Margen por material")
+        st.caption(
+            "El **costo por unidad** se calcula con el costo total del día dividido entre la producción total (incluye movilización amortizada). "
+            "Luego se calcula el margen individual usando el precio de cada material."
+        )
+
+        if material_margin_df is None or material_margin_df.empty:
+            st.warning("No se pudo calcular el margen por material.")
+        else:
+            worst = material_margin_df.iloc[0]
+            if float(worst["Margen (%)"]) < 0:
+                st.error(
+                    f"❌ Hay un material con **margen negativo**. Peor caso: **{worst['Material']}** "
+                    f"({float(worst['Margen (%)']):.1f}%)."
+                )
+            elif float(worst["Margen (%)"]) < target_margin:
+                st.warning(
+                    f"⚠️ Hay materiales por debajo del margen objetivo ({target_margin}%). Peor caso: **{worst['Material']}** "
+                    f"({float(worst['Margen (%)']):.1f}%)."
+                )
+            else:
+                st.success("✅ Todos los materiales cumplen o superan el margen objetivo.")
+
+            st.dataframe(
+                material_margin_df.style.format({
+                    "Producción diaria": "{:,.0f}",
+                    "Precio": "{:,.2f}",
+                    f"Costo por {unit}": "{:,.2f}",
+                    "Ganancia por unidad": "{:,.2f}",
+                    "Margen (%)": "{:.1f}",
+                    "Ingreso diario": "{:,.0f}",
+                    "Ganancia diaria": "{:,.0f}",
+                    "Ingreso proyecto": "{:,.0f}",
+                    "Ganancia proyecto": "{:,.0f}",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
         st.divider()
-        
+
         # Cost Breakdown Chart
         col1, col2 = st.columns(2)
         
@@ -1389,6 +2064,9 @@ def main():
                 "daily_production": float(project.daily_production),
                 "unit": project.unit,
                 "material_type": project.material_type,
+                "availability_pct": int(availability_pct),
+                "materials_ideal": materials,
+                "materials": materials_for_calc,
             },
             "economic": {
                 "diesel_price": float(economic.diesel_price),
@@ -1636,14 +2314,15 @@ def main():
     st.divider()
     st.header("📥 Exportar Resultados")
     
-    col1, col2 = st.columns(2)
-    
+    col1, col2, col3 = st.columns(3)
+
     with col1:
         # Generate Excel
         excel_data = generate_excel_report(
             project, personnel, logistics, economic,
             equipment_costs, daily_costs, unit_cost_data, margins,
-            scenarios, sensitivity_df
+            scenarios, sensitivity_df,
+            materials, material_margin_df,
         )
         st.download_button(
             label="📊 Descargar Excel",
@@ -1651,13 +2330,14 @@ def main():
             file_name=f"analisis_trituracion_{project_name.replace(' ', '_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-    
+
     with col2:
         # Generate PDF
         pdf_data = generate_pdf_report(
             project, personnel, logistics, economic,
             equipment_costs, daily_costs, unit_cost_data, margins,
-            scenarios, sensitivity_df
+            scenarios, sensitivity_df,
+            materials, material_margin_df,
         )
         st.download_button(
             label="📄 Descargar PDF",
@@ -1665,6 +2345,31 @@ def main():
             file_name=f"analisis_trituracion_{project_name.replace(' ', '_')}.pdf",
             mime="application/pdf",
         )
+
+    with col3:
+        # Generate Business Proposal PDF (client-facing)
+        if "proposal_materials" not in locals() or not proposal_materials:
+            st.info("🧾 Para generar la propuesta, completa cantidades y precios en la sección 'Propuesta Comercial' del sidebar.")
+        else:
+            proposal_pdf_data = generate_business_proposal_pdf(
+                project=project,
+                generator=generator,
+                plant_equipment=plant_equipment,
+                mobile_equipment=mobile_equipment,
+                proposal_materials=proposal_materials,
+                company_name="Agremaq Ltda",
+                company_tagline="Servicio de trituración móvil y producción de áridos",
+                client_name=client_name if "client_name" in locals() else "",
+                payment_terms=payment_terms if "payment_terms" in locals() else "",
+                validity_days=int(validity_days) if "validity_days" in locals() else 7,
+                notes=proposal_notes if "proposal_notes" in locals() else "",
+            )
+            st.download_button(
+                label="🧾 Descargar Propuesta (PDF)",
+                data=proposal_pdf_data,
+                file_name=f"propuesta_{project_name.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+            )
 
 
 if __name__ == "__main__":
